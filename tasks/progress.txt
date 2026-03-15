@@ -7,6 +7,7 @@
 - Private financial records are filtered through `user_id` after `get_current_user` resolves the access token, while merchant and merchant-alias queries stay instance-scoped.
 - CSV import profile detection lives in `app.importing.parser`; unsupported headers should return a manual-mapping requirement structure rather than failing implicitly.
 - Import preview uploads are staged under `IMPORT_STORAGE_DIR/<user-id>/...` and persisted as pending `imports` rows with `stored_path` set for later commit flows.
+- Import dedupe is keyed from `user_id`, `posted_on`, normalized `amount`, and normalized merchant text; commit flows should reuse that same hash logic instead of inventing per-endpoint duplicate checks.
 
 ## Progress Log
 ## 2026-03-15 15:11 EDT - US-001
@@ -153,5 +154,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Adding a new required setting means every explicit `Settings(...)` test fixture must be updated, not just the default config object.
   - Unknown CSVs may need split debit and credit mappings, so manual mapping cannot assume a single signed amount column.
   - Useful context (e.g., "the evaluation panel is in component X")
-  - The preview endpoint accepts multipart uploads with optional `column_mapping` JSON in form data; invalid mapping payloads return HTTP `422` with a top-level `detail.errors` list.
+- The preview endpoint accepts multipart uploads with optional `column_mapping` JSON in form data; invalid mapping payloads return HTTP `422` with a top-level `detail.errors` list.
+---
+## 2026-03-15 17:21 EDT - US-008
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Implemented `/api/imports/{import_id}/commit`, which re-reads the staged CSV from the preview flow, reparses it, normalizes merchant text, inserts transactions, and marks the import complete.
+- Added deterministic dedupe hashing from `user_id`, `posted_on`, normalized amount text, and normalized merchant text so overlapping commits skip duplicates instead of inserting them twice.
+- Added automatic merchant creation for previously unseen normalized merchant names and tests that verify committed transaction normalization, merchant creation, and duplicate-skip counts across repeated overlapping imports.
+- Files changed: `AGENTS.md`, `backend/app/api/ledger.py`, `backend/app/services/imports.py`, `backend/tests/test_import_preview_api.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Import commit reads from the staged `imports.stored_path`; later workflows should pass `import_id` around instead of shipping the raw CSV again.
+  - Transaction dedupe is centralized around normalized merchant text plus user, date, and amount, which keeps repeated commit attempts idempotent enough for v1.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Manual-mapped previews cannot be committed unless the same mapping is provided again, because the baseline schema does not yet persist mapping metadata.
+  - Route helpers that return unions are convenient for shared list/detail endpoints, but commit-style actions need concrete model fetches to keep pyright satisfied.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The new commit tests live beside the preview tests in `backend/tests/test_import_preview_api.py`, so future import workflow coverage can extend that file before adding a separate suite.
 ---

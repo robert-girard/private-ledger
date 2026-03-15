@@ -116,3 +116,75 @@ def test_import_preview_rejects_invalid_manual_mapping(auth_client: TestClient) 
     assert payload["detail"]["message"] == "Invalid column mapping."
     assert any("Missing Header" in error for error in payload["detail"]["errors"])
     assert any("only one semantic field" in error for error in payload["detail"]["errors"])
+
+
+def test_commit_import_inserts_transactions_and_creates_merchants(auth_client: TestClient) -> None:
+    headers = _login_headers(auth_client)
+
+    with (FIXTURE_DIR / "td.csv").open("rb") as handle:
+        preview_response = auth_client.post(
+            "/api/imports/preview",
+            headers=headers,
+            files={"file": ("td.csv", handle, "text/csv")},
+        )
+
+    import_id = preview_response.json()["import_id"]
+    commit_response = auth_client.post(f"/api/imports/{import_id}/commit", headers=headers, json={})
+
+    assert commit_response.status_code == 200
+    payload = commit_response.json()
+    assert payload["status"] == "complete"
+    assert payload["inserted_count"] == 2
+    assert payload["skipped_count"] == 0
+    assert payload["failed_count"] == 0
+
+    transactions_response = auth_client.get("/api/transactions", headers=headers)
+    merchants_response = auth_client.get("/api/merchants", headers=headers)
+    import_response = auth_client.get(f"/api/imports/{import_id}", headers=headers)
+
+    assert transactions_response.status_code == 200
+    transactions = transactions_response.json()
+    assert [item["description"] for item in transactions] == ["COFFEE SHOP", "PAYROLL"]
+    assert transactions[0]["normalized_description"] == "coffee shop"
+    assert transactions[0]["amount"] == "-5.45"
+
+    assert merchants_response.status_code == 200
+    assert [item["raw_name"] for item in merchants_response.json()] == ["COFFEE SHOP", "PAYROLL"]
+
+    assert import_response.status_code == 200
+    assert import_response.json()["import_status"] == "complete"
+    assert import_response.json()["imported_at"] is not None
+
+
+def test_commit_import_skips_duplicate_rows_from_overlapping_import(auth_client: TestClient) -> None:
+    headers = _login_headers(auth_client)
+
+    with (FIXTURE_DIR / "td.csv").open("rb") as first_handle:
+        first_preview = auth_client.post(
+            "/api/imports/preview",
+            headers=headers,
+            files={"file": ("td.csv", first_handle, "text/csv")},
+        )
+    first_import_id = first_preview.json()["import_id"]
+    first_commit = auth_client.post(f"/api/imports/{first_import_id}/commit", headers=headers, json={})
+
+    with (FIXTURE_DIR / "td.csv").open("rb") as second_handle:
+        second_preview = auth_client.post(
+            "/api/imports/preview",
+            headers=headers,
+            files={"file": ("td.csv", second_handle, "text/csv")},
+        )
+    second_import_id = second_preview.json()["import_id"]
+    second_commit = auth_client.post(f"/api/imports/{second_import_id}/commit", headers=headers, json={})
+
+    assert first_commit.status_code == 200
+    assert second_commit.status_code == 200
+    assert second_commit.json()["inserted_count"] == 0
+    assert second_commit.json()["skipped_count"] == 2
+    assert second_commit.json()["failed_count"] == 0
+
+    transactions_response = auth_client.get("/api/transactions", headers=headers)
+    merchants_response = auth_client.get("/api/merchants", headers=headers)
+
+    assert len(transactions_response.json()) == 2
+    assert len(merchants_response.json()) == 2

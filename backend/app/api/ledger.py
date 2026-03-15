@@ -14,6 +14,7 @@ from app.db.models import Budget, Import, Merchant, MerchantAlias, Subscription,
 from app.db.session import get_db_session
 from app.dependencies.auth import get_current_user
 from app.importing.parser import ManualMappingRequirement, MappingValidationError, ProfileParseResult
+from app.services.imports import commit_import as create_import_commit
 from app.services.imports import create_import_preview
 
 router = APIRouter(prefix="/api", tags=["ledger"])
@@ -70,6 +71,27 @@ class ImportPreviewResponse(BaseModel):
     row_count: int
     unresolved_columns: list[str]
     preview_rows: list[ParsedPreviewRowResponse]
+
+
+class ManualColumnMappingRequest(BaseModel):
+    date: str
+    description: str
+    amount: str | None = None
+    debit: str | None = None
+    credit: str | None = None
+
+
+class ImportCommitRequest(BaseModel):
+    column_mapping: ManualColumnMappingRequest | None = None
+
+
+class ImportCommitResponse(BaseModel):
+    import_id: str
+    status: str
+    inserted_count: int
+    skipped_count: int
+    failed_count: int
+    row_count: int
 
 
 class SubscriptionResponse(BaseModel):
@@ -165,7 +187,9 @@ def get_import(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> ImportResponse:
-    item = _user_scoped_resource(session, Import, import_id, user.id)
+    item = session.scalar(select(Import).where(Import.id == import_id, Import.user_id == user.id))
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
     return ImportResponse.model_validate(item, from_attributes=True)
 
 
@@ -240,6 +264,42 @@ async def preview_import(
         )
 
     raise AssertionError("Unhandled import preview result.")
+
+
+@router.post("/imports/{import_id}/commit", response_model=ImportCommitResponse)
+def commit_import_rows(
+    import_id: str,
+    payload: ImportCommitRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> ImportCommitResponse:
+    import_record = session.scalar(select(Import).where(Import.id == import_id, Import.user_id == user.id))
+    if import_record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+    column_mapping = payload.column_mapping.model_dump_json() if payload.column_mapping is not None else None
+
+    try:
+        result = create_import_commit(
+            session=session,
+            settings=get_settings(),
+            user=user,
+            import_record=import_record,
+            column_mapping=column_mapping,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": "Import commit failed.", "errors": [str(exc)]},
+        ) from exc
+
+    return ImportCommitResponse(
+        import_id=result.import_record.id,
+        status=result.import_record.import_status,
+        inserted_count=result.inserted_count,
+        skipped_count=result.skipped_count,
+        failed_count=result.failed_count,
+        row_count=result.import_record.row_count,
+    )
 
 
 @router.get("/subscriptions", response_model=list[SubscriptionResponse])
