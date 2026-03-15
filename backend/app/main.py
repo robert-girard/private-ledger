@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api.auth import router as auth_router
+from app.api.ledger import router as ledger_router
 from app.config import get_settings
 from app.db.migrations import initialize_database
 
@@ -20,6 +21,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Private Ledger", lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(ledger_router)
 
 
 @app.get("/api/health")

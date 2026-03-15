@@ -4,6 +4,7 @@
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
 - Refresh-token rotation and logout revocation are implemented by storing revoked refresh-token JTIs in `refresh_token_blocklist`.
+- Private financial records are filtered through `user_id` after `get_current_user` resolves the access token, while merchant and merchant-alias queries stay instance-scoped.
 
 ## Progress Log
 ## 2026-03-15 15:11 EDT - US-001
@@ -73,4 +74,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Refresh-token revocation depends on storing the old token JTI before issuing or accepting future refreshes.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The auth API tests already create a temporary bootstrapped admin and exercise the full login-refresh-logout sequence end to end.
+---
+## 2026-03-15 16:10 EDT - US-005
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added access-token based current-user resolution through a shared auth dependency and exposed `/api/me`.
+- Added protected list/detail endpoints for transactions, imports, subscriptions, and budgets that scope all queries to the authenticated user.
+- Added shared merchant and merchant-alias list endpoints that remain instance-scoped rather than user-scoped.
+- Added isolation tests that verify user-scoped lists only show owned records, cross-user detail access is rejected, and protected routes require authentication.
+- Files changed: `AGENTS.md`, `backend/app/main.py`, `backend/app/dependencies/*`, `backend/app/api/ledger.py`, `backend/tests/test_user_isolation.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Protected routes should depend on `get_current_user` and treat the returned `User` as the source of truth for `user_id` filtering.
+  - Shared merchant metadata is intentionally global to the instance, so merchant queries should not be filtered by authenticated user.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Cross-user access checks are easiest to validate through detail endpoints that return `404` when the resource exists but belongs to a different user.
+  - Access-token tests need to log in each fixture user separately because the auth layer only trusts signed bearer tokens, not raw user IDs.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The new ledger API surface is intentionally minimal and exists mainly to establish the scoping and authorization pattern for later feature stories.
 ---
