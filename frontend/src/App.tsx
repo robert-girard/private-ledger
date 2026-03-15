@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type AppView = "import" | "transactions";
+type AppView = "import" | "transactions" | "merchants";
 
 type UserSummary = {
   email: string;
@@ -43,6 +43,24 @@ type TransactionRow = {
   import_source: string | null;
 };
 
+type MerchantRow = {
+  id: string;
+  raw_name: string;
+  display_name: string;
+  category: string | null;
+  status: "reviewed" | "unreviewed";
+  is_transfer: boolean;
+  transaction_count: number;
+  last_seen: string | null;
+};
+
+type MerchantAliasRow = {
+  id: string;
+  merchant_id: string;
+  alias: string;
+  normalized_alias: string;
+};
+
 type ApiError = {
   detail?: string | { message?: string; errors?: string[] };
 };
@@ -57,6 +75,11 @@ const views: Array<{ id: AppView; title: string; summary: string }> = [
     id: "transactions",
     title: "Transaction Manager",
     summary: "Filter, repair, bulk-edit, and export the current ledger view.",
+  },
+  {
+    id: "merchants",
+    title: "Merchant Manager",
+    summary: "Review merchant records, repair aliases, and merge duplicate registry entries.",
   },
 ];
 
@@ -669,6 +692,387 @@ function TransactionManager({ token }: { token: string }) {
   );
 }
 
+function MerchantManager({ token }: { token: string }) {
+  const [merchants, setMerchants] = useState<MerchantRow[]>([]);
+  const [aliases, setAliases] = useState<MerchantAliasRow[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<TransactionRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "reviewed" | "unreviewed">("all");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [transferFilter, setTransferFilter] = useState<"all" | "transfer" | "non-transfer">("all");
+  const [selectedMerchantId, setSelectedMerchantId] = useState<string>("");
+  const [draftDisplayNames, setDraftDisplayNames] = useState<Record<string, string>>({});
+  const [draftCategories, setDraftCategories] = useState<Record<string, string>>({});
+  const [newAlias, setNewAlias] = useState("");
+  const [mergeTargetId, setMergeTargetId] = useState("");
+
+  async function loadMerchants() {
+    setLoading(true);
+    setError("");
+    try {
+      const [merchantRows, aliasRows] = await Promise.all([
+        apiRequest<MerchantRow[]>("/api/merchants", {}, token),
+        apiRequest<MerchantAliasRow[]>("/api/merchant-aliases", {}, token),
+      ]);
+      setMerchants(merchantRows);
+      setAliases(aliasRows);
+      setSelectedMerchantId((current) => current || merchantRows[0]?.id || "");
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadMerchantDetail(merchantId: string) {
+    if (!merchantId) {
+      setRecentTransactions([]);
+      return;
+    }
+
+    setDetailLoading(true);
+    setError("");
+    try {
+      const transactions = await apiRequest<TransactionRow[]>(
+        `/api/transactions?merchant_id=${encodeURIComponent(merchantId)}`,
+        {},
+        token,
+      );
+      setRecentTransactions(transactions.slice(0, 5));
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadMerchants();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  useEffect(() => {
+    void loadMerchantDetail(selectedMerchantId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMerchantId, token]);
+
+  const filteredMerchants = useMemo(() => {
+    return merchants.filter((merchant) => {
+      const matchesSearch =
+        !search ||
+        [merchant.display_name, merchant.raw_name, merchant.category ?? ""]
+          .join(" ")
+          .toLowerCase()
+          .includes(search.toLowerCase());
+      const matchesStatus = statusFilter === "all" || merchant.status === statusFilter;
+      const matchesCategory =
+        !categoryFilter || (merchant.category ?? "").toLowerCase().includes(categoryFilter.toLowerCase());
+      const matchesTransfer =
+        transferFilter === "all" ||
+        (transferFilter === "transfer" ? merchant.is_transfer : !merchant.is_transfer);
+      return matchesSearch && matchesStatus && matchesCategory && matchesTransfer;
+    });
+  }, [categoryFilter, merchants, search, statusFilter, transferFilter]);
+
+  const selectedMerchant = merchants.find((merchant) => merchant.id === selectedMerchantId) ?? null;
+  const selectedAliases = aliases.filter((alias) => alias.merchant_id === selectedMerchantId);
+
+  async function saveMerchant(merchant: MerchantRow) {
+    try {
+      await apiRequest<MerchantRow>(
+        `/api/merchants/${merchant.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name: draftDisplayNames[merchant.id] ?? merchant.display_name,
+            category: draftCategories[merchant.id] ?? merchant.category ?? "",
+          }),
+        },
+        token,
+      );
+      setMessage(`Saved merchant changes for ${merchant.display_name}.`);
+      await loadMerchants();
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  async function createAlias() {
+    if (!selectedMerchantId || !newAlias.trim()) {
+      setError("Choose a merchant and enter an alias.");
+      return;
+    }
+    try {
+      await apiRequest(
+        `/api/merchants/${selectedMerchantId}/aliases`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ alias: newAlias }),
+        },
+        token,
+      );
+      setNewAlias("");
+      setMessage("Alias added.");
+      await loadMerchants();
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  async function deleteAlias(aliasId: string) {
+    try {
+      await fetch(`/api/merchant-aliases/${aliasId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }).then(async (response) => {
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as ApiError;
+          throw new Error(errorMessage(payload));
+        }
+      });
+      setMessage("Alias removed.");
+      await loadMerchants();
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  async function mergeMerchant() {
+    if (!selectedMerchantId || !mergeTargetId) {
+      setError("Choose a merge target.");
+      return;
+    }
+    try {
+      await apiRequest(
+        `/api/merchants/${selectedMerchantId}/merge`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target_merchant_id: mergeTargetId }),
+        },
+        token,
+      );
+      setMessage("Merchants merged.");
+      setMergeTargetId("");
+      await loadMerchants();
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  return (
+    <section className="workspace-card">
+      <div className="section-heading">
+        <p className="eyebrow">Merchants</p>
+        <h2>Merchant Manager</h2>
+        <p>Search the shared merchant registry, repair display names and categories inline, and resolve alias or merge cleanup from one panel.</p>
+      </div>
+
+      <div className="filter-grid merchant-filter-grid">
+        <label className="field">
+          <span>Search</span>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Coffee, payroll, transfer" />
+        </label>
+        <label className="field">
+          <span>Status</span>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
+            <option value="all">All statuses</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="unreviewed">Unreviewed</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Category</span>
+          <input value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} placeholder="Dining" />
+        </label>
+        <label className="field">
+          <span>Transfer flag</span>
+          <select value={transferFilter} onChange={(event) => setTransferFilter(event.target.value as typeof transferFilter)}>
+            <option value="all">All merchants</option>
+            <option value="transfer">Transfers only</option>
+            <option value="non-transfer">Non-transfers</option>
+          </select>
+        </label>
+        <div className="actions-row">
+          <button className="primary-button" type="button" onClick={() => void loadMerchants()} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh Registry"}
+          </button>
+        </div>
+      </div>
+
+      {message ? <p className="notice success">{message}</p> : null}
+      {error ? <p className="notice error">{error}</p> : null}
+
+      <div className="split-layout">
+        <article className="preview-table-card">
+          <div className="table-header">
+            <h3>Merchant registry</h3>
+            <span>{filteredMerchants.length} merchants</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Merchant</th>
+                <th>Raw name</th>
+                <th>Category</th>
+                <th>Transactions</th>
+                <th>Last seen</th>
+                <th>Status</th>
+                <th>Transfer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredMerchants.map((merchant) => (
+                <tr
+                  key={merchant.id}
+                  className={merchant.id === selectedMerchantId ? "table-row-active" : ""}
+                  onClick={() => setSelectedMerchantId(merchant.id)}
+                >
+                  <td>
+                    <div className="inline-edit stacked-inline">
+                      <input
+                        value={draftDisplayNames[merchant.id] ?? merchant.display_name}
+                        onChange={(event) =>
+                          setDraftDisplayNames((current) => ({ ...current, [merchant.id]: event.target.value }))
+                        }
+                      />
+                      <button className="ghost-button" type="button" onClick={() => void saveMerchant(merchant)}>
+                        Save
+                      </button>
+                    </div>
+                  </td>
+                  <td>{merchant.raw_name}</td>
+                  <td>
+                    <input
+                      value={draftCategories[merchant.id] ?? merchant.category ?? ""}
+                      onChange={(event) =>
+                        setDraftCategories((current) => ({ ...current, [merchant.id]: event.target.value }))
+                      }
+                    />
+                  </td>
+                  <td>{merchant.transaction_count}</td>
+                  <td>{merchant.last_seen ?? "Never"}</td>
+                  <td>
+                    <span className={merchant.status === "reviewed" ? "status-pill reviewed" : "status-pill"}>
+                      {merchant.status}
+                    </span>
+                  </td>
+                  <td>{merchant.is_transfer ? "Yes" : "No"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+
+        <aside className="preview-metadata detail-panel">
+          <h3>Detail panel</h3>
+          {selectedMerchant ? (
+            <>
+              <dl>
+                <div>
+                  <dt>Display name</dt>
+                  <dd>{selectedMerchant.display_name}</dd>
+                </div>
+                <div>
+                  <dt>Raw name</dt>
+                  <dd>{selectedMerchant.raw_name}</dd>
+                </div>
+                <div>
+                  <dt>Category</dt>
+                  <dd>{selectedMerchant.category ?? "Unassigned"}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{selectedMerchant.status}</dd>
+                </div>
+              </dl>
+
+              <div className="detail-section">
+                <div className="table-header">
+                  <h4>Alias rules</h4>
+                  <span>{selectedAliases.length}</span>
+                </div>
+                <div className="actions-row compact-row">
+                  <input value={newAlias} onChange={(event) => setNewAlias(event.target.value)} placeholder="COFFEE SHOP TORONTO" />
+                  <button className="secondary-button" type="button" onClick={createAlias}>
+                    Add alias
+                  </button>
+                </div>
+                {selectedAliases.length ? (
+                  <div className="alias-list">
+                    {selectedAliases.map((alias) => (
+                      <div key={alias.id} className="alias-row">
+                        <span>{alias.alias}</span>
+                        <button className="ghost-button" type="button" onClick={() => void deleteAlias(alias.id)}>
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-copy">No aliases yet.</p>
+                )}
+              </div>
+
+              <div className="detail-section">
+                <div className="table-header">
+                  <h4>Merge action</h4>
+                </div>
+                <label className="field">
+                  <span>Merge into</span>
+                  <select value={mergeTargetId} onChange={(event) => setMergeTargetId(event.target.value)}>
+                    <option value="">Choose target merchant</option>
+                    {merchants
+                      .filter((merchant) => merchant.id !== selectedMerchant.id)
+                      .map((merchant) => (
+                        <option key={merchant.id} value={merchant.id}>
+                          {merchant.display_name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <button className="ghost-button" type="button" onClick={mergeMerchant}>
+                  Merge selected merchant
+                </button>
+              </div>
+
+              <div className="detail-section">
+                <div className="table-header">
+                  <h4>Recent transactions</h4>
+                  <span>{detailLoading ? "Loading..." : recentTransactions.length}</span>
+                </div>
+                {recentTransactions.length ? (
+                  <div className="detail-transaction-list">
+                    {recentTransactions.map((transaction) => (
+                      <div key={transaction.id} className="detail-transaction-row">
+                        <strong>{transaction.description}</strong>
+                        <span>{transaction.posted_on}</span>
+                        <span>{transaction.amount}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-copy">No recent transactions for this merchant yet.</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="empty-state">
+              <p>Select a merchant to manage aliases, merge actions, and recent transaction history.</p>
+            </div>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [token, setToken] = useState<string>(() => window.localStorage.getItem("private-ledger-token") ?? "");
   const [user, setUser] = useState<UserSummary | null>(null);
@@ -789,6 +1193,7 @@ export function App() {
           <div className="workspace-content">
             {view === "import" ? <ImportWizard token={token} /> : null}
             {view === "transactions" ? <TransactionManager token={token} /> : null}
+            {view === "merchants" ? <MerchantManager token={token} /> : null}
           </div>
         </div>
       )}

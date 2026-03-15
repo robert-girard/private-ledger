@@ -174,7 +174,7 @@
         "Verify in browser using playwright-cli skill"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "This UI only becomes useful after import preview, transaction commit, merchant backend actions, and the Import Wizard page exist."
     },
     {

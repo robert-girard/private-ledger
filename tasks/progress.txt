@@ -11,6 +11,7 @@
 - Import preview uploads are staged under `IMPORT_STORAGE_DIR/<user-id>/...` and persisted as pending `imports` rows with `stored_path` set for later commit flows.
 - Import dedupe is keyed from `user_id`, `posted_on`, normalized `amount`, and normalized merchant text; commit flows should reuse that same hash logic instead of inventing per-endpoint duplicate checks.
 - Merchant registry endpoints are instance-scoped, but bulk recategorization logic must only mutate the authenticated user’s transactions when replaying merchant rules.
+- Merchant detail panels can reuse `/api/transactions?merchant_id=...` for recent history and filter `/api/merchant-aliases` client-side by `merchant_id`; no extra backend detail endpoint is needed for the current review UI.
 - Recurring subscription detection groups negative transactions by merchant or normalized description in `app.services.subscriptions`; `/api/subscriptions/detect` upserts the detected rows so reruns stay idempotent.
 - Transaction review and CSV export should share one filter contract so the exported dataset matches the current filtered ledger view exactly.
 
@@ -256,4 +257,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Manual subscription editing can attach a merchant directly, so detail-match queries should prefer `merchant_id` when present and only fall back to normalized display-name matching when it is absent.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The current backend now exposes the core contract the later Subscriptions page can use: detect, list, detail-with-matches, create, and update.
+---
+## 2026-03-15 18:19 EDT - US-011
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added a Merchant Manager view to the authenticated SPA with client-side search and filters, inline display-name/category edits, and a detail panel for alias rules, merge actions, and recent transactions.
+- Reused the existing merchant list, alias list, and transaction filter APIs instead of adding a new merchant-detail backend endpoint.
+- Verified the page in the browser using `playwright-cli` against a temporary local backend on `http://127.0.0.1:8010`: signed in, opened Merchant Manager, filtered the registry to the transfer merchant, edited `Daily Coffee` to `Daily Coffee Roasters` with category `Coffee`, added alias `COFFEE SHOP EAST`, and confirmed the detail panel showed alias rules, merge target controls, and recent transactions. Screenshot: `/tmp/private-ledger-us011-merchant-manager.png`.
+- Files changed: `AGENTS.md`, `frontend/src/App.tsx`, `frontend/src/styles.css`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Merchant Manager can stay on the lightweight authenticated shell in `frontend/src/App.tsx`; it does not need routing yet as long as each tool page owns its own fetch and state logic.
+  - The existing backend contract is already enough for the current detail panel: alias rows come from the global alias list, and recent merchant history comes from `/api/transactions?merchant_id=...`.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Browser verification for merchant UI needs seeded merchant and transaction data; an empty local database will make the page look correct structurally while leaving the key review interactions unproven.
+  - Row-level inline edit controls inside clickable table rows can bubble clicks into the selection handler, so follow-up UX work should keep that interaction in mind if selection behavior gets more complex.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The Merchant Manager lives beside Import and Transactions in `frontend/src/App.tsx`, and the current detail panel is the main place future alias, merge, and recategorize affordances should extend.
 ---
