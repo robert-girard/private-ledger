@@ -13,6 +13,7 @@
 - Merchant registry endpoints are instance-scoped, but bulk recategorization logic must only mutate the authenticated user’s transactions when replaying merchant rules.
 - Merchant detail panels can reuse `/api/transactions?merchant_id=...` for recent history and filter `/api/merchant-aliases` client-side by `merchant_id`; no extra backend detail endpoint is needed for the current review UI.
 - Recurring subscription detection groups negative transactions by merchant or normalized description in `app.services.subscriptions`; `/api/subscriptions/detect` upserts the detected rows so reruns stay idempotent.
+- Subscription UI can use the existing list/detail/detect endpoints directly; detection is an explicit page action and detail views already include recent matching charges.
 - Transaction review and CSV export should share one filter contract so the exported dataset matches the current filtered ledger view exactly.
 
 ## Progress Log
@@ -273,4 +274,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Row-level inline edit controls inside clickable table rows can bubble clicks into the selection handler, so follow-up UX work should keep that interaction in mind if selection behavior gets more complex.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The Merchant Manager lives beside Import and Transactions in `frontend/src/App.tsx`, and the current detail panel is the main place future alias, merge, and recategorize affordances should extend.
+---
+## 2026-03-15 18:24 EDT - US-015
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added a Subscriptions page to the authenticated SPA shell with recurring-detection, filters for all/monthly/annual/inactive entries, manual create/edit flows, and a detail panel showing recent matching transactions.
+- Reused the existing subscription list/detail/detect backend contract from `US-014`, plus the merchant list for linking manual subscriptions to known merchants.
+- Verified the page in the browser using `playwright-cli` against a temporary local backend on `http://127.0.0.1:8010`: detected three recurring subscriptions from seeded history, filtered to monthly entries, created an inactive `Gym Membership` subscription linked to `City Gym`, switched to the inactive filter, edited it into active `City Gym Membership` annual form, and confirmed recent matching transactions rendered in the detail panel. Screenshot: `/tmp/private-ledger-us015-subscriptions.png`.
+- Files changed: `AGENTS.md`, `frontend/src/App.tsx`, `frontend/src/styles.css`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - The current subscription UI can stay on the shared shell without routing because list state, detail state, and the manual form are all localized to one page component.
+  - Detection works best as an explicit user action; it keeps page load simple and makes repeated refreshes predictable when seeded history or imports change underneath the UI.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Browser verification needs seeded recurring transaction history or the detection button will appear to work while returning an empty table.
+  - Playwright field targeting can drift when multiple textbox labels repeat across the page, so snapshot refs are more reliable than generic label matching once the detail form is open.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The Subscriptions page now sits beside Import, Transactions, and Merchants in `frontend/src/App.tsx`; later budget flows can reuse its detail panel structure and merchant-link form controls.
 ---

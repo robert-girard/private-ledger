@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type AppView = "import" | "transactions" | "merchants";
+type AppView = "import" | "transactions" | "merchants" | "subscriptions";
 
 type UserSummary = {
   email: string;
@@ -61,6 +61,30 @@ type MerchantAliasRow = {
   normalized_alias: string;
 };
 
+type SubscriptionRow = {
+  id: string;
+  user_id: string;
+  merchant_id: string | null;
+  display_name: string;
+  category: string | null;
+  interval: "monthly" | "annual" | "variable";
+  amount: string;
+  is_active: boolean;
+  last_charged_on: string | null;
+  next_expected_on: string | null;
+  recent_match_transaction_id: string | null;
+};
+
+type SubscriptionDetail = SubscriptionRow & {
+  recent_matches: Array<{
+    transaction_id: string;
+    posted_on: string;
+    description: string;
+    amount: string;
+    category: string | null;
+  }>;
+};
+
 type ApiError = {
   detail?: string | { message?: string; errors?: string[] };
 };
@@ -80,6 +104,11 @@ const views: Array<{ id: AppView; title: string; summary: string }> = [
     id: "merchants",
     title: "Merchant Manager",
     summary: "Review merchant records, repair aliases, and merge duplicate registry entries.",
+  },
+  {
+    id: "subscriptions",
+    title: "Subscriptions",
+    summary: "Detect recurring charges, edit recurring entries, and inspect matched transactions.",
   },
 ];
 
@@ -1073,6 +1102,360 @@ function MerchantManager({ token }: { token: string }) {
   );
 }
 
+function SubscriptionsPage({ token }: { token: string }) {
+  const [subscriptions, setSubscriptions] = useState<SubscriptionRow[]>([]);
+  const [detail, setDetail] = useState<SubscriptionDetail | null>(null);
+  const [selectedSubscriptionId, setSelectedSubscriptionId] = useState("");
+  const [filter, setFilter] = useState<"all" | "monthly" | "annual" | "inactive">("all");
+  const [loading, setLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [manualOpen, setManualOpen] = useState(false);
+  const [editingSubscriptionId, setEditingSubscriptionId] = useState("");
+  const [form, setForm] = useState({
+    display_name: "",
+    category: "",
+    interval: "monthly" as SubscriptionRow["interval"],
+    amount: "",
+    is_active: true,
+    merchant_id: "",
+    last_charged_on: "",
+    next_expected_on: "",
+  });
+  const [merchants, setMerchants] = useState<MerchantRow[]>([]);
+
+  async function loadSubscriptions(preferredId?: string) {
+    setLoading(true);
+    setError("");
+    try {
+      const [subscriptionRows, merchantRows] = await Promise.all([
+        apiRequest<SubscriptionRow[]>("/api/subscriptions", {}, token),
+        apiRequest<MerchantRow[]>("/api/merchants", {}, token),
+      ]);
+      setSubscriptions(subscriptionRows);
+      setMerchants(merchantRows);
+      const nextId = preferredId ?? selectedSubscriptionId ?? subscriptionRows[0]?.id ?? "";
+      setSelectedSubscriptionId(nextId);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadDetail(subscriptionId: string) {
+    if (!subscriptionId) {
+      setDetail(null);
+      return;
+    }
+
+    setDetailLoading(true);
+    setError("");
+    try {
+      const payload = await apiRequest<SubscriptionDetail>(`/api/subscriptions/${subscriptionId}`, {}, token);
+      setDetail(payload);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadSubscriptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  useEffect(() => {
+    void loadDetail(selectedSubscriptionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSubscriptionId, token]);
+
+  const filteredSubscriptions = useMemo(() => {
+    return subscriptions.filter((subscription) => {
+      if (filter === "all") {
+        return true;
+      }
+      if (filter === "inactive") {
+        return !subscription.is_active;
+      }
+      return subscription.interval === filter && subscription.is_active;
+    });
+  }, [filter, subscriptions]);
+
+  function resetForm() {
+    setForm({
+      display_name: "",
+      category: "",
+      interval: "monthly",
+      amount: "",
+      is_active: true,
+      merchant_id: "",
+      last_charged_on: "",
+      next_expected_on: "",
+    });
+    setEditingSubscriptionId("");
+    setManualOpen(false);
+  }
+
+  async function runDetection() {
+    try {
+      const payload = await apiRequest<{ detected_count: number; subscriptions: SubscriptionRow[] }>(
+        "/api/subscriptions/detect",
+        { method: "POST" },
+        token,
+      );
+      setMessage(`Detected or refreshed ${payload.detected_count} recurring subscription${payload.detected_count === 1 ? "" : "s"}.`);
+      setSubscriptions(payload.subscriptions);
+      setSelectedSubscriptionId(payload.subscriptions[0]?.id ?? "");
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  function startManualCreate() {
+    resetForm();
+    setManualOpen(true);
+  }
+
+  function startEdit(subscription: SubscriptionRow) {
+    setEditingSubscriptionId(subscription.id);
+    setManualOpen(true);
+    setForm({
+      display_name: subscription.display_name,
+      category: subscription.category ?? "",
+      interval: subscription.interval,
+      amount: subscription.amount,
+      is_active: subscription.is_active,
+      merchant_id: subscription.merchant_id ?? "",
+      last_charged_on: subscription.last_charged_on ?? "",
+      next_expected_on: subscription.next_expected_on ?? "",
+    });
+  }
+
+  async function saveSubscription(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    try {
+      const payload = {
+        display_name: form.display_name,
+        category: form.category || null,
+        interval: form.interval,
+        amount: form.amount,
+        is_active: form.is_active,
+        merchant_id: form.merchant_id || null,
+        last_charged_on: form.last_charged_on || null,
+        next_expected_on: form.next_expected_on || null,
+      };
+
+      const path = editingSubscriptionId ? `/api/subscriptions/${editingSubscriptionId}` : "/api/subscriptions";
+      const method = editingSubscriptionId ? "PATCH" : "POST";
+      const response = await apiRequest<SubscriptionRow>(
+        path,
+        {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+        token,
+      );
+      setMessage(editingSubscriptionId ? "Subscription updated." : "Subscription created.");
+      resetForm();
+      await loadSubscriptions(response.id);
+      await loadDetail(response.id);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  return (
+    <section className="workspace-card">
+      <div className="section-heading">
+        <p className="eyebrow">Subscriptions</p>
+        <h2>Subscriptions</h2>
+        <p>Detect recurring spending, keep recurring entries editable, and review the transaction history supporting each subscription.</p>
+      </div>
+
+      <div className="filter-grid subscription-toolbar">
+        <label className="field">
+          <span>Filter</span>
+          <select value={filter} onChange={(event) => setFilter(event.target.value as typeof filter)}>
+            <option value="all">All subscriptions</option>
+            <option value="monthly">Monthly</option>
+            <option value="annual">Annual</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </label>
+        <button className="primary-button" type="button" onClick={() => void runDetection()}>
+          Detect recurring charges
+        </button>
+        <button className="secondary-button" type="button" onClick={startManualCreate}>
+          Add manual subscription
+        </button>
+      </div>
+
+      {message ? <p className="notice success">{message}</p> : null}
+      {error ? <p className="notice error">{error}</p> : null}
+
+      <div className="split-layout">
+        <article className="preview-table-card">
+          <div className="table-header">
+            <h3>Recurring entries</h3>
+            <span>{loading ? "Refreshing..." : `${filteredSubscriptions.length} subscriptions`}</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Interval</th>
+                <th>Amount</th>
+                <th>Last charged</th>
+                <th>Next expected</th>
+                <th>Active</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSubscriptions.map((subscription) => (
+                <tr
+                  key={subscription.id}
+                  className={subscription.id === selectedSubscriptionId ? "table-row-active" : ""}
+                  onClick={() => setSelectedSubscriptionId(subscription.id)}
+                >
+                  <td>{subscription.display_name}</td>
+                  <td>{subscription.category ?? "Unassigned"}</td>
+                  <td>{subscription.interval}</td>
+                  <td>{subscription.amount}</td>
+                  <td>{subscription.last_charged_on ?? "Unknown"}</td>
+                  <td>{subscription.next_expected_on ?? "Unknown"}</td>
+                  <td>{subscription.is_active ? "Yes" : "No"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+
+        <aside className="preview-metadata detail-panel">
+          <div className="table-header">
+            <h3>Subscription detail</h3>
+            {detail ? (
+              <button className="ghost-button" type="button" onClick={() => startEdit(detail)}>
+                Edit
+              </button>
+            ) : null}
+          </div>
+
+          {manualOpen ? (
+            <form className="auth-form compact-form" onSubmit={saveSubscription}>
+              <label className="field">
+                <span>Display name</span>
+                <input value={form.display_name} onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Category</span>
+                <input value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Interval</span>
+                <select value={form.interval} onChange={(event) => setForm((current) => ({ ...current, interval: event.target.value as SubscriptionRow["interval"] }))}>
+                  <option value="monthly">Monthly</option>
+                  <option value="annual">Annual</option>
+                  <option value="variable">Variable</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Amount</span>
+                <input value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} placeholder="15.99" />
+              </label>
+              <label className="field">
+                <span>Merchant</span>
+                <select value={form.merchant_id} onChange={(event) => setForm((current) => ({ ...current, merchant_id: event.target.value }))}>
+                  <option value="">No merchant link</option>
+                  {merchants.map((merchant) => (
+                    <option key={merchant.id} value={merchant.id}>
+                      {merchant.display_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Last charged</span>
+                <input type="date" value={form.last_charged_on} onChange={(event) => setForm((current) => ({ ...current, last_charged_on: event.target.value }))} />
+              </label>
+              <label className="field">
+                <span>Next expected</span>
+                <input type="date" value={form.next_expected_on} onChange={(event) => setForm((current) => ({ ...current, next_expected_on: event.target.value }))} />
+              </label>
+              <label className="toggle">
+                <input checked={form.is_active} onChange={(event) => setForm((current) => ({ ...current, is_active: event.target.checked }))} type="checkbox" />
+                <span>Active subscription</span>
+              </label>
+              <div className="actions-row">
+                <button className="primary-button" type="submit">
+                  {editingSubscriptionId ? "Save subscription" : "Create subscription"}
+                </button>
+                <button className="ghost-button" type="button" onClick={resetForm}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : detail ? (
+            <>
+              <dl>
+                <div>
+                  <dt>Display name</dt>
+                  <dd>{detail.display_name}</dd>
+                </div>
+                <div>
+                  <dt>Category</dt>
+                  <dd>{detail.category ?? "Unassigned"}</dd>
+                </div>
+                <div>
+                  <dt>Interval</dt>
+                  <dd>{detail.interval}</dd>
+                </div>
+                <div>
+                  <dt>Amount</dt>
+                  <dd>{detail.amount}</dd>
+                </div>
+                <div>
+                  <dt>Active</dt>
+                  <dd>{detail.is_active ? "Yes" : "No"}</dd>
+                </div>
+              </dl>
+
+              <div className="detail-section">
+                <div className="table-header">
+                  <h4>Recent matching transactions</h4>
+                  <span>{detailLoading ? "Loading..." : detail.recent_matches.length}</span>
+                </div>
+                {detail.recent_matches.length ? (
+                  <div className="detail-transaction-list">
+                    {detail.recent_matches.map((match) => (
+                      <div key={match.transaction_id} className="detail-transaction-row">
+                        <strong>{match.description}</strong>
+                        <span>{match.posted_on}</span>
+                        <span>{match.amount}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-copy">No matching transactions are attached yet.</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="empty-state">
+              <p>Run detection or create a manual subscription to start reviewing recurring spending.</p>
+            </div>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [token, setToken] = useState<string>(() => window.localStorage.getItem("private-ledger-token") ?? "");
   const [user, setUser] = useState<UserSummary | null>(null);
@@ -1194,6 +1577,7 @@ export function App() {
             {view === "import" ? <ImportWizard token={token} /> : null}
             {view === "transactions" ? <TransactionManager token={token} /> : null}
             {view === "merchants" ? <MerchantManager token={token} /> : null}
+            {view === "subscriptions" ? <SubscriptionsPage token={token} /> : null}
           </div>
         </div>
       )}

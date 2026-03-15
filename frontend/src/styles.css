@@ -319,6 +319,10 @@ th {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.subscription-toolbar {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .toggle {
   display: flex;
   align-items: center;
@@ -391,6 +395,10 @@ th {
   margin: 0;
 }
 
+.compact-form {
+  margin-top: 0;
+}
+
 .compact-row {
   align-items: center;
 }
@@ -445,7 +453,8 @@ th {
   .hero-panel,
   .filter-grid,
   .bulk-toolbar,
-  .merchant-filter-grid {
+  .merchant-filter-grid,
+  .subscription-toolbar {
     grid-template-columns: 1fr;
   }
 
