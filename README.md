@@ -59,6 +59,12 @@ Planning stage. Initial implementation work is tracked in [tasks/prd.json](/home
    docker compose up --build
    ```
 
+7. Run the clean-start smoke test after setup or before shipping changes:
+
+   ```bash
+   ./scripts/smoke_test.sh
+   ```
+
 Required environment variables:
 
 - `APP_HOST`: host binding for local backend runs, defaults to `0.0.0.0`
@@ -100,6 +106,57 @@ container build performs the frontend compilation step automatically.
 - Full-stack container verification: use `docker compose up --build` to rebuild the SPA and package it into the FastAPI container.
 - Environment setup: `docker compose` reads `.env` directly, so keep `.env.example` and the local `.env` in sync when new required variables are introduced.
 - Import preview uploads: `/api/imports/preview` stores the raw CSV under `IMPORT_STORAGE_DIR/<user-id>/...` and records that temp path on the `imports` row for later commit flows.
+
+## Deployment Workflow
+
+1. Copy `.env.example` to `.env` and set production-strength values for `PASSWORD_PEPPER` and `AUTH_SECRET_KEY`.
+2. Start or refresh the stack with `docker compose up --build -d`.
+3. Confirm the service is healthy with `curl http://127.0.0.1:${APP_PORT:-8000}/api/health`.
+4. Bootstrap the first operator with `uv run --project backend python -m app.bootstrap_admin --email admin@example.com --display-name "Household Admin" --password "<strong-password>"`.
+
+Useful compose commands:
+
+- Start in background: `docker compose up --build -d`
+- Follow logs: `docker compose logs -f`
+- Stop the stack: `docker compose down`
+
+## Maintenance Workflow
+
+Before updating:
+
+1. Create a database backup.
+2. Pull the latest code for the target branch.
+3. Rebuild and restart with `docker compose up --build -d`.
+4. Run `./scripts/smoke_test.sh` to validate a clean boot, auth flow, security headers, and SPA serving.
+
+## Smoke Test
+
+`./scripts/smoke_test.sh` performs an automated local verification run by:
+
+- building the frontend into `frontend/dist`
+- starting FastAPI against a temporary SQLite database and import directory
+- bootstrapping an admin user
+- checking `/api/health`, login, CSP/HSTS headers, and backend-served SPA HTML
+
+Override the temporary port if needed:
+
+```bash
+SMOKE_TEST_PORT=8015 ./scripts/smoke_test.sh
+```
+
+## Backup and Export
+
+Create a point-in-time SQLite backup:
+
+```bash
+sqlite3 data/private-ledger.db ".backup 'data/private-ledger-backup.db'"
+```
+
+Export transactions to CSV directly from SQLite when needed:
+
+```bash
+sqlite3 -header -csv data/private-ledger.db "SELECT posted_on, description, amount, category FROM transactions;" > transactions-export.csv
+```
 
 ## Notes
 

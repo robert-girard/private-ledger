@@ -7,6 +7,7 @@
 - Reporting endpoints should keep one shared `start_date`/`end_date` filter contract across JSON and CSV exports so report downloads stay aligned with the on-screen dataset.
 - Reports drill-through should reuse the shared shell state plus the existing `/api/transactions` filter contract instead of adding report-specific detail endpoints.
 - Auth throttling and temporary login lockouts are in-process state in `app.security.protection`, so backend tests that override auth settings should reset that store between cases.
+- `scripts/smoke_test.sh` is the canonical clean-start verification flow; deployment docs should stay aligned with what that script actually builds and checks.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
 - Refresh-token rotation and logout revocation are implemented by storing revoked refresh-token JTIs in `refresh_token_blocklist`.
@@ -409,4 +410,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - UUID-backed staged upload filenames should not reuse user-supplied filenames in `stored_path`; keep the original upload name only in `imports.source_filename`.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The regression coverage for the hardening work lives mainly in `backend/tests/test_auth_api.py`, `backend/tests/test_security.py`, and `backend/tests/test_import_preview_api.py`.
+---
+## 2026-03-15 20:01 EDT - US-023
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added an automated `scripts/smoke_test.sh` workflow that builds the SPA, boots FastAPI on a temporary SQLite database, bootstraps an admin, and verifies health, login, security headers, and backend-served SPA HTML.
+- Expanded the README with explicit deployment, maintenance, smoke-test, and backup or export instructions so operators have one place for local setup, compose usage, update flow, and SQLite backup commands.
+- Recorded the smoke-test script as the canonical clean-start verification path in the repo guidance so future deployment docs stay aligned with the executable workflow.
+- Files changed: `AGENTS.md`, `README.md`, `scripts/smoke_test.sh`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Operator docs should point at `scripts/smoke_test.sh` instead of restating a separate manual validation checklist.
+  - The smoke test is most useful when it verifies both API health and backend-served SPA behavior against a temporary clean database.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Header verification for the SPA shell must use `GET` rather than `HEAD` because the current catch-all frontend route only registers `GET`.
+  - The smoke-test script intentionally uses temporary secrets and a temporary SQLite path, so production procedures still need the real `.env` values documented in the README.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The smoke-test script lives at `scripts/smoke_test.sh` and currently validates `/api/health`, `/api/auth/login`, root response headers, and the served `index.html`.
 ---
