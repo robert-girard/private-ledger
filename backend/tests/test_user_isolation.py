@@ -32,6 +32,14 @@ def isolation_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         auth_secret_key="test-auth-secret",
         access_token_ttl_minutes=15,
         refresh_token_ttl_days=14,
+        login_rate_limit_window_seconds=60,
+        login_rate_limit_max_attempts=5,
+        refresh_rate_limit_window_seconds=60,
+        refresh_rate_limit_max_attempts=10,
+        auth_lockout_threshold=3,
+        auth_lockout_window_seconds=300,
+        auth_lockout_duration_seconds=300,
+        content_security_policy="default-src 'self'",
         frontend_dist_dir=Path("frontend/dist"),
     )
 

@@ -6,6 +6,7 @@
 - Python dependencies and backend tooling are managed with `uv` from `backend/pyproject.toml` and `backend/uv.lock`.
 - Reporting endpoints should keep one shared `start_date`/`end_date` filter contract across JSON and CSV exports so report downloads stay aligned with the on-screen dataset.
 - Reports drill-through should reuse the shared shell state plus the existing `/api/transactions` filter contract instead of adding report-specific detail endpoints.
+- Auth throttling and temporary login lockouts are in-process state in `app.security.protection`, so backend tests that override auth settings should reset that store between cases.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
 - Refresh-token rotation and logout revocation are implemented by storing revoked refresh-token JTIs in `refresh_token_blocklist`.
@@ -392,4 +393,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Browser verification for reports needs seeded budgets as well as seeded transactions, or the budget-vs-actual panel will render empty even though the rest of the page works.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The Reports page currently lives in `frontend/src/App.tsx`, and its drill-through actions land in the same Transaction Manager view that already powers ledger review and CSV export.
+---
+## 2026-03-15 19:54 EDT - US-022
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added in-process login and refresh rate limiting plus temporary failed-login lockouts, then enforced them in `/api/auth/login` and `/api/auth/refresh` with `429` and `423` responses plus `Retry-After` headers.
+- Added security response headers in FastAPI middleware and hardened staged CSV upload filenames to UUID-only names under the existing per-user import sandbox.
+- Extended backend coverage for login lockout behavior, auth rate limiting, CSP/HSTS headers, and UUID-backed staged upload filenames, then documented the new auth-protection settings in the env example and README.
+- Files changed: `.env.example`, `AGENTS.md`, `README.md`, `backend/app/api/auth.py`, `backend/app/config.py`, `backend/app/main.py`, `backend/app/security/__init__.py`, `backend/app/security/protection.py`, `backend/app/services/imports.py`, `backend/tests/conftest.py`, `backend/tests/test_auth_api.py`, `backend/tests/test_import_preview_api.py`, `backend/tests/test_security.py`, `backend/tests/test_user_isolation.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Auth endpoint hardening should stay in the route layer via `app.security.protection`, while credential verification and token issuance remain in `app.services.auth`.
+  - Security response headers are attached in one FastAPI middleware, so future header changes belong there instead of being duplicated per route.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Any backend fixture that instantiates `Settings(...)` directly must include the auth-throttling and CSP fields now that they are part of the base config dataclass.
+  - UUID-backed staged upload filenames should not reuse user-supplied filenames in `stored_path`; keep the original upload name only in `imports.source_filename`.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The regression coverage for the hardening work lives mainly in `backend/tests/test_auth_api.py`, `backend/tests/test_security.py`, and `backend/tests/test_import_preview_api.py`.
 ---

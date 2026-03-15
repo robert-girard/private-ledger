@@ -15,6 +15,14 @@ class Settings:
     auth_secret_key: str
     access_token_ttl_minutes: int
     refresh_token_ttl_days: int
+    login_rate_limit_window_seconds: int
+    login_rate_limit_max_attempts: int
+    refresh_rate_limit_window_seconds: int
+    refresh_rate_limit_max_attempts: int
+    auth_lockout_threshold: int
+    auth_lockout_window_seconds: int
+    auth_lockout_duration_seconds: int
+    content_security_policy: str
     frontend_dist_dir: Path
 
 
@@ -35,6 +43,17 @@ settings = Settings(
     auth_secret_key=os.getenv("AUTH_SECRET_KEY", "development-auth-secret"),
     access_token_ttl_minutes=int(os.getenv("ACCESS_TOKEN_TTL_MINUTES", "15")),
     refresh_token_ttl_days=int(os.getenv("REFRESH_TOKEN_TTL_DAYS", "14")),
+    login_rate_limit_window_seconds=int(os.getenv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60")),
+    login_rate_limit_max_attempts=int(os.getenv("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", "5")),
+    refresh_rate_limit_window_seconds=int(os.getenv("REFRESH_RATE_LIMIT_WINDOW_SECONDS", "60")),
+    refresh_rate_limit_max_attempts=int(os.getenv("REFRESH_RATE_LIMIT_MAX_ATTEMPTS", "10")),
+    auth_lockout_threshold=int(os.getenv("AUTH_LOCKOUT_THRESHOLD", "3")),
+    auth_lockout_window_seconds=int(os.getenv("AUTH_LOCKOUT_WINDOW_SECONDS", "300")),
+    auth_lockout_duration_seconds=int(os.getenv("AUTH_LOCKOUT_DURATION_SECONDS", "300")),
+    content_security_policy=os.getenv(
+        "CONTENT_SECURITY_POLICY",
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    ),
     frontend_dist_dir=Path(__file__).resolve().parents[2] / "frontend" / "dist",
 )
 

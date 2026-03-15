@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -93,3 +94,11 @@ def test_bootstrap_initial_admin_rejects_existing_users(tmp_path: Path) -> None:
                 ),
                 pepper="pepper",
             )
+
+
+def test_security_headers_are_attached_to_api_responses(auth_client: TestClient) -> None:
+    response = auth_client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.headers["content-security-policy"] == "default-src 'self'"
+    assert response.headers["strict-transport-security"] == "max-age=63072000; includeSubDomains"

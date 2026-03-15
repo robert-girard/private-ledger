@@ -69,9 +69,24 @@ Required environment variables:
 - `AUTH_SECRET_KEY`: HMAC secret used for access and refresh token signing
 - `ACCESS_TOKEN_TTL_MINUTES`: access token lifetime in minutes, defaults to `15`
 - `REFRESH_TOKEN_TTL_DAYS`: refresh token lifetime in days, defaults to `14`
+- `LOGIN_RATE_LIMIT_WINDOW_SECONDS`: rolling window for login request throttling, defaults to `60`
+- `LOGIN_RATE_LIMIT_MAX_ATTEMPTS`: max login requests allowed per client within the login rate window, defaults to `5`
+- `REFRESH_RATE_LIMIT_WINDOW_SECONDS`: rolling window for refresh request throttling, defaults to `60`
+- `REFRESH_RATE_LIMIT_MAX_ATTEMPTS`: max refresh requests allowed per client within the refresh rate window, defaults to `10`
+- `AUTH_LOCKOUT_THRESHOLD`: failed login attempts allowed before temporary lockout, defaults to `3`
+- `AUTH_LOCKOUT_WINDOW_SECONDS`: rolling window used to count failed login attempts toward lockout, defaults to `300`
+- `AUTH_LOCKOUT_DURATION_SECONDS`: temporary lockout length after repeated failed logins, defaults to `300`
+- `CONTENT_SECURITY_POLICY`: response header policy emitted by FastAPI for SPA and API responses
 
 The FastAPI app serves `frontend/dist` directly when those assets exist. The
 container build performs the frontend compilation step automatically.
+
+## Security Defaults
+
+- Login and refresh endpoints are rate-limited in-process to slow brute-force and token abuse.
+- Repeated failed login attempts trigger a temporary lockout keyed to the login identity and client host.
+- Uploaded CSV previews are staged under per-user directories with UUID-backed filenames rather than user-supplied names.
+- FastAPI emits `Content-Security-Policy` and `Strict-Transport-Security` headers on API and SPA responses.
 
 ## Developer Running Notes
 

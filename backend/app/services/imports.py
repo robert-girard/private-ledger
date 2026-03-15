@@ -53,7 +53,8 @@ def _store_upload(
     user_dir = settings.import_storage_dir / user.id
     user_dir.mkdir(parents=True, exist_ok=True)
 
-    stored_path = user_dir / f"{uuid4()}-{_safe_filename(filename)}"
+    suffix = Path(_safe_filename(filename)).suffix or ".csv"
+    stored_path = user_dir / f"{uuid4()}{suffix.lower()}"
     stored_path.write_text(csv_text, encoding="utf-8")
     return stored_path
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 
@@ -42,6 +43,8 @@ def test_import_preview_detects_profile_and_stores_upload(auth_client: TestClien
     assert stored_path.exists()
     assert stored_path.read_text(encoding="utf-8") == (FIXTURE_DIR / "td.csv").read_text(encoding="utf-8")
     assert stored_path.is_relative_to(app.config.get_settings().import_storage_dir)
+    assert stored_path.suffix == ".csv"
+    UUID(stored_path.stem)
 
 
 def test_import_preview_returns_manual_mapping_requirement_for_unknown_headers(

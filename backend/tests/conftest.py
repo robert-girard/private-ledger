@@ -12,6 +12,7 @@ import app.main
 from app.config import Settings
 from app.db.migrations import initialize_database
 from app.db.session import configure_session_factory
+from app.security.protection import auth_protection_store
 from app.services.users import BootstrapAdminInput, bootstrap_initial_admin
 
 
@@ -28,10 +29,19 @@ def auth_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         auth_secret_key="test-auth-secret",
         access_token_ttl_minutes=15,
         refresh_token_ttl_days=14,
+        login_rate_limit_window_seconds=60,
+        login_rate_limit_max_attempts=5,
+        refresh_rate_limit_window_seconds=60,
+        refresh_rate_limit_max_attempts=10,
+        auth_lockout_threshold=3,
+        auth_lockout_window_seconds=300,
+        auth_lockout_duration_seconds=300,
+        content_security_policy="default-src 'self'",
         frontend_dist_dir=Path("frontend/dist"),
     )
 
     app.config.settings = test_settings
+    auth_protection_store.reset()
     initialize_database(database_url)
     configure_session_factory(database_url)
 
@@ -49,5 +59,6 @@ def auth_client(tmp_path: Path) -> Generator[TestClient, None, None]:
     with TestClient(app.main.app) as client:
         yield client
 
+    auth_protection_store.reset()
     app.config.settings = original_settings
     configure_session_factory(original_settings.database_url)
