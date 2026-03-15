@@ -5,6 +5,7 @@
 - The SPA still uses one authenticated shell with local `view` state instead of routing, so new pages and quick actions should switch that shared view state rather than introduce parallel navigation patterns.
 - Python dependencies and backend tooling are managed with `uv` from `backend/pyproject.toml` and `backend/uv.lock`.
 - Reporting endpoints should keep one shared `start_date`/`end_date` filter contract across JSON and CSV exports so report downloads stay aligned with the on-screen dataset.
+- Reports drill-through should reuse the shared shell state plus the existing `/api/transactions` filter contract instead of adding report-specific detail endpoints.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
 - Refresh-token rotation and logout revocation are implemented by storing revoked refresh-token JTIs in `refresh_token_blocklist`.
@@ -375,4 +376,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Budget-vs-actual reporting needs to recompute actual spend from transactions for the requested months rather than trusting possibly stale persisted `spent_amount` snapshots.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The current export surface is `GET /api/reports/{report_name}/export` for `money-flow`, `category-breakdown`, `monthly-trend`, `budget-vs-actual`, and `top-merchants`.
+---
+## 2026-03-15 19:41 EDT - US-021
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added a Reports page to the shared authenticated SPA shell with a global date-range selector, summary metrics, money-flow, category breakdown, monthly trend, budget-vs-actual, and top-merchant panels, plus CSV export buttons for each dataset.
+- Wired report drill-through actions back into Transaction Manager by extending the shared shell state and transaction filter UI to carry category, merchant, and date-range filters instead of adding report-specific detail routes.
+- Verified the page in the browser using `playwright-cli` against a temporary local backend on `http://127.0.0.1:8010`: signed in, opened Reports, confirmed the full dataset panels rendered from seeded data, applied a March 2026 date range and saw totals narrow to `$2,900.00` income and `$294.00` expenses, then used Top Merchants drill-through to open Transaction Manager with `Noodle Bar` preselected. Screenshot: `/tmp/private-ledger-us021b/reports-page.png`.
+- Files changed: `AGENTS.md`, `frontend/src/App.tsx`, `frontend/src/styles.css`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Reports UI can stay thin by composing the existing `/api/reports/*` endpoints in parallel and reusing the same authenticated CSV download helper pattern as Transaction Manager.
+  - Cross-page report drill-through is simplest when it reuses the existing `/api/transactions` filter contract through shared shell state instead of inventing report-only transaction detail APIs.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Report export buttons still need bearer-authenticated fetches; plain links will miss the access token and fail in the current SPA session model.
+  - Browser verification for reports needs seeded budgets as well as seeded transactions, or the budget-vs-actual panel will render empty even though the rest of the page works.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The Reports page currently lives in `frontend/src/App.tsx`, and its drill-through actions land in the same Transaction Manager view that already powers ledger review and CSV export.
 ---

@@ -46,3 +46,4 @@ This file defines the root-level guidance for agents working in this repository.
 - The SPA still uses a shared shell with local `view` state instead of a router; cross-page dashboard shortcuts should switch that shell state rather than adding ad hoc links or a second navigation system.
 - Reporting aggregation belongs in `app.services.reports`; `/api/reports/*` endpoints should share the same optional `start_date` or `end_date` filters and keep CSV exports aligned with the JSON dataset builders instead of duplicating report math in each route.
 - Transaction query work should extend the main `/api/transactions` endpoint with filters and reuse the same filter set for `/api/transactions/export`, so the UI can export exactly the rows it is reviewing.
+- Reports drill-through should reuse the shared shell state plus the existing `/api/transactions` filter contract instead of adding report-specific detail endpoints or a second navigation flow.

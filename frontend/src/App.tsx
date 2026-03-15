@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type AppView = "dashboard" | "import" | "transactions" | "merchants" | "subscriptions" | "budget";
+type AppView = "dashboard" | "import" | "transactions" | "merchants" | "subscriptions" | "budget" | "reports";
 
 type UserSummary = {
   email: string;
@@ -133,6 +133,58 @@ type DashboardAttention = {
   unreviewed_merchant_count: number;
 };
 
+type ReportMoneyFlowRow = {
+  direction: "income" | "expense";
+  category: string;
+  amount: string;
+};
+
+type ReportCategoryBreakdownRow = {
+  category: string;
+  amount: string;
+  transaction_count: number;
+  share: string;
+};
+
+type ReportMonthlyTrendRow = {
+  month_start: string;
+  income_total: string;
+  expense_total: string;
+  net_total: string;
+};
+
+type ReportBudgetVsActualRow = {
+  month_start: string;
+  category: string;
+  planned_amount: string;
+  actual_amount: string;
+  variance_amount: string;
+};
+
+type ReportTopMerchantRow = {
+  merchant_id: string | null;
+  merchant_name: string;
+  category: string | null;
+  amount: string;
+  transaction_count: number;
+};
+
+type ReportSummary = {
+  start_date: string | null;
+  end_date: string | null;
+  income_total: string;
+  expense_total: string;
+  net_total: string;
+};
+
+type TransactionFilters = {
+  category: string;
+  merchantId: string;
+  startDate: string;
+  endDate: string;
+  uncategorizedOnly: boolean;
+};
+
 type ApiError = {
   detail?: string | { message?: string; errors?: string[] };
 };
@@ -168,6 +220,11 @@ const views: Array<{ id: AppView; title: string; summary: string }> = [
     title: "Budget Creator",
     summary: "Generate a monthly budget, refine category limits, and activate the reviewed month.",
   },
+  {
+    id: "reports",
+    title: "Reports",
+    summary: "Analyze money flow, category mix, trends, budget variance, and top merchants with exportable datasets.",
+  },
 ];
 
 function formatCurrency(value: string | number): string {
@@ -182,6 +239,29 @@ function formatCurrency(value: string | number): string {
 
 function formatInterval(interval: string): string {
   return interval.charAt(0).toUpperCase() + interval.slice(1);
+}
+
+function formatPercent(value: string | number): string {
+  const amount = typeof value === "number" ? value : Number(value);
+  return new Intl.NumberFormat("en-CA", {
+    style: "percent",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function endOfMonth(monthStart: string): string {
+  const [year, month] = monthStart.split("-").map(Number);
+  const nextMonth = new Date(year, month, 1);
+  const lastDay = new Date(nextMonth.getTime() - 24 * 60 * 60 * 1000);
+  return lastDay.toISOString().slice(0, 10);
+}
+
+function monthLabel(monthStart: string): string {
+  return new Date(`${monthStart}T00:00:00`).toLocaleDateString("en-CA", {
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function DashboardPage({ token, onNavigate }: { token: string; onNavigate: (view: AppView) => void }) {
@@ -430,6 +510,27 @@ async function apiRequest<T>(path: string, init: RequestInit = {}, token?: strin
     throw new Error(errorMessage(payload));
   }
   return (await response.json()) as T;
+}
+
+async function downloadProtectedCsv(path: string, token: string, filename: string): Promise<void> {
+  const response = await fetch(path, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as ApiError;
+    throw new Error(errorMessage(payload));
+  }
+
+  const content = await response.text();
+  const blob = new Blob([content], { type: "text/csv" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.URL.revokeObjectURL(url);
 }
 
 function ImportWizard({
@@ -735,38 +836,63 @@ function ImportWizard({
   );
 }
 
-function TransactionManager({ token }: { token: string }) {
+function TransactionManager({ token, initialFilters }: { token: string; initialFilters: TransactionFilters }) {
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+  const [merchants, setMerchants] = useState<MerchantRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState(initialFilters.category);
+  const [merchantFilter, setMerchantFilter] = useState(initialFilters.merchantId);
+  const [startDateFilter, setStartDateFilter] = useState(initialFilters.startDate);
+  const [endDateFilter, setEndDateFilter] = useState(initialFilters.endDate);
+  const [uncategorizedOnly, setUncategorizedOnly] = useState(initialFilters.uncategorizedOnly);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [inlineCategory, setInlineCategory] = useState<Record<string, string>>({});
   const [bulkCategory, setBulkCategory] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
-  async function loadTransactions() {
+  async function loadTransactions(filterOverrides?: Partial<TransactionFilters>) {
     setLoading(true);
     setError("");
+    const nextFilters: TransactionFilters = {
+      category: filterOverrides?.category ?? categoryFilter,
+      merchantId: filterOverrides?.merchantId ?? merchantFilter,
+      startDate: filterOverrides?.startDate ?? startDateFilter,
+      endDate: filterOverrides?.endDate ?? endDateFilter,
+      uncategorizedOnly: filterOverrides?.uncategorizedOnly ?? uncategorizedOnly,
+    };
     const params = new URLSearchParams();
-    if (categoryFilter) {
-      params.set("category", categoryFilter);
+    if (nextFilters.category) {
+      params.set("category", nextFilters.category);
     }
-    if (uncategorizedOnly) {
+    if (nextFilters.merchantId) {
+      params.set("merchant_id", nextFilters.merchantId);
+    }
+    if (nextFilters.startDate) {
+      params.set("start_date", nextFilters.startDate);
+    }
+    if (nextFilters.endDate) {
+      params.set("end_date", nextFilters.endDate);
+    }
+    if (nextFilters.uncategorizedOnly) {
       params.set("uncategorized_only", "true");
     }
 
     try {
-      const response = await apiRequest<TransactionRow[]>(
-        `/api/transactions${params.toString() ? `?${params.toString()}` : ""}`,
-        {},
-        token,
-      );
-      setTransactions(response);
+      const [transactionRows, merchantRows] = await Promise.all([
+        apiRequest<TransactionRow[]>(
+          `/api/transactions${params.toString() ? `?${params.toString()}` : ""}`,
+          {},
+          token,
+        ),
+        apiRequest<MerchantRow[]>("/api/merchants", {}, token),
+      ]);
+      setTransactions(transactionRows);
+      setMerchants(merchantRows);
       setPage(1);
+      setSelectedIds([]);
     } catch (requestError) {
       setError(errorMessage((requestError as Error).message));
     } finally {
@@ -775,9 +901,14 @@ function TransactionManager({ token }: { token: string }) {
   }
 
   useEffect(() => {
-    void loadTransactions();
+    setCategoryFilter(initialFilters.category);
+    setMerchantFilter(initialFilters.merchantId);
+    setStartDateFilter(initialFilters.startDate);
+    setEndDateFilter(initialFilters.endDate);
+    setUncategorizedOnly(initialFilters.uncategorizedOnly);
+    void loadTransactions(initialFilters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, uncategorizedOnly]);
+  }, [initialFilters, token]);
 
   async function updateCategory(transactionId: string) {
     try {
@@ -850,31 +981,24 @@ function TransactionManager({ token }: { token: string }) {
       if (categoryFilter) {
         params.set("category", categoryFilter);
       }
+      if (merchantFilter) {
+        params.set("merchant_id", merchantFilter);
+      }
+      if (startDateFilter) {
+        params.set("start_date", startDateFilter);
+      }
+      if (endDateFilter) {
+        params.set("end_date", endDateFilter);
+      }
       if (uncategorizedOnly) {
         params.set("uncategorized_only", "true");
       }
 
-      const response = await fetch(
+      await downloadProtectedCsv(
         `/api/transactions/export${params.toString() ? `?${params.toString()}` : ""}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
+        token,
+        "transactions.csv",
       );
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as ApiError;
-        throw new Error(errorMessage(payload));
-      }
-
-      const content = await response.text();
-      const blob = new Blob([content], { type: "text/csv" });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "transactions.csv";
-      link.click();
-      window.URL.revokeObjectURL(url);
       setMessage("Exported the current filtered transaction view.");
     } catch (requestError) {
       setError(errorMessage((requestError as Error).message));
@@ -892,10 +1016,29 @@ function TransactionManager({ token }: { token: string }) {
         <p>Filter and repair transactions, apply bulk actions, and export the exact ledger slice you are reviewing.</p>
       </div>
 
-      <div className="filter-grid">
+      <div className="filter-grid transaction-filter-grid">
         <label className="field">
           <span>Category filter</span>
           <input value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} placeholder="Dining" />
+        </label>
+        <label className="field">
+          <span>Merchant</span>
+          <select value={merchantFilter} onChange={(event) => setMerchantFilter(event.target.value)}>
+            <option value="">All merchants</option>
+            {merchants.map((merchant) => (
+              <option key={merchant.id} value={merchant.id}>
+                {merchant.display_name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Start date</span>
+          <input value={startDateFilter} onChange={(event) => setStartDateFilter(event.target.value)} type="date" />
+        </label>
+        <label className="field">
+          <span>End date</span>
+          <input value={endDateFilter} onChange={(event) => setEndDateFilter(event.target.value)} type="date" />
         </label>
         <label className="toggle">
           <input
@@ -1741,6 +1884,421 @@ function SubscriptionsPage({ token }: { token: string }) {
   );
 }
 
+function ReportsPage({
+  token,
+  onOpenTransactions,
+}: {
+  token: string;
+  onOpenTransactions: (filters: Partial<TransactionFilters>) => void;
+}) {
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [summary, setSummary] = useState<ReportSummary | null>(null);
+  const [moneyFlow, setMoneyFlow] = useState<ReportMoneyFlowRow[]>([]);
+  const [categoryBreakdown, setCategoryBreakdown] = useState<ReportCategoryBreakdownRow[]>([]);
+  const [monthlyTrend, setMonthlyTrend] = useState<ReportMonthlyTrendRow[]>([]);
+  const [budgetVsActual, setBudgetVsActual] = useState<ReportBudgetVsActualRow[]>([]);
+  const [topMerchants, setTopMerchants] = useState<ReportTopMerchantRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  function buildQuery(
+    limit?: number,
+    overrides?: {
+      startDate?: string;
+      endDate?: string;
+    },
+  ): string {
+    const params = new URLSearchParams();
+    const resolvedStartDate = overrides?.startDate ?? startDate;
+    const resolvedEndDate = overrides?.endDate ?? endDate;
+    if (resolvedStartDate) {
+      params.set("start_date", resolvedStartDate);
+    }
+    if (resolvedEndDate) {
+      params.set("end_date", resolvedEndDate);
+    }
+    if (typeof limit === "number") {
+      params.set("limit", String(limit));
+    }
+    return params.toString() ? `?${params.toString()}` : "";
+  }
+
+  async function loadReports() {
+    setLoading(true);
+    setError("");
+    try {
+      const query = buildQuery(5);
+      const [summaryPayload, moneyFlowPayload, categoryPayload, monthlyPayload, budgetPayload, merchantPayload] = await Promise.all([
+        apiRequest<ReportSummary>(`/api/reports/summary${buildQuery()}`, {}, token),
+        apiRequest<ReportMoneyFlowRow[]>(`/api/reports/money-flow${buildQuery()}`, {}, token),
+        apiRequest<ReportCategoryBreakdownRow[]>(`/api/reports/category-breakdown${buildQuery()}`, {}, token),
+        apiRequest<ReportMonthlyTrendRow[]>(`/api/reports/monthly-trend${buildQuery()}`, {}, token),
+        apiRequest<ReportBudgetVsActualRow[]>(`/api/reports/budget-vs-actual${buildQuery()}`, {}, token),
+        apiRequest<ReportTopMerchantRow[]>(`/api/reports/top-merchants${query}`, {}, token),
+      ]);
+      setSummary(summaryPayload);
+      setMoneyFlow(moneyFlowPayload);
+      setCategoryBreakdown(categoryPayload);
+      setMonthlyTrend(monthlyPayload);
+      setBudgetVsActual(budgetPayload);
+      setTopMerchants(merchantPayload);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadReports();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  async function exportReport(reportName: string, filename: string, limit?: number) {
+    setError("");
+    setMessage("");
+    try {
+      await downloadProtectedCsv(`/api/reports/${reportName}/export${buildQuery(limit)}`, token, filename);
+      setMessage(`Exported ${filename}.`);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  function reviewCategory(category: string) {
+    onOpenTransactions({
+      category: category === "Uncategorized" ? "" : category,
+      uncategorizedOnly: category === "Uncategorized",
+      merchantId: "",
+      startDate,
+      endDate,
+    });
+  }
+
+  return (
+    <section className="workspace-card">
+      <div className="section-heading">
+        <p className="eyebrow">Reports</p>
+        <h2>Reports</h2>
+        <p>Compare money in versus money out, inspect category concentration, and jump from report slices into the transaction review workflow.</p>
+      </div>
+
+      <div className="filter-grid reports-filter-grid">
+        <label className="field">
+          <span>Start date</span>
+          <input value={startDate} onChange={(event) => setStartDate(event.target.value)} type="date" />
+        </label>
+        <label className="field">
+          <span>End date</span>
+          <input value={endDate} onChange={(event) => setEndDate(event.target.value)} type="date" />
+        </label>
+        <div className="actions-row">
+          <button className="primary-button" type="button" onClick={() => void loadReports()} disabled={loading}>
+            {loading ? "Refreshing..." : "Apply Range"}
+          </button>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => {
+              setStartDate("");
+              setEndDate("");
+              void (async () => {
+                setLoading(true);
+                setError("");
+                try {
+                  const [summaryPayload, moneyFlowPayload, categoryPayload, monthlyPayload, budgetPayload, merchantPayload] = await Promise.all([
+                    apiRequest<ReportSummary>(`/api/reports/summary${buildQuery(undefined, { startDate: "", endDate: "" })}`, {}, token),
+                    apiRequest<ReportMoneyFlowRow[]>(`/api/reports/money-flow${buildQuery(undefined, { startDate: "", endDate: "" })}`, {}, token),
+                    apiRequest<ReportCategoryBreakdownRow[]>(`/api/reports/category-breakdown${buildQuery(undefined, { startDate: "", endDate: "" })}`, {}, token),
+                    apiRequest<ReportMonthlyTrendRow[]>(`/api/reports/monthly-trend${buildQuery(undefined, { startDate: "", endDate: "" })}`, {}, token),
+                    apiRequest<ReportBudgetVsActualRow[]>(`/api/reports/budget-vs-actual${buildQuery(undefined, { startDate: "", endDate: "" })}`, {}, token),
+                    apiRequest<ReportTopMerchantRow[]>(`/api/reports/top-merchants${buildQuery(5, { startDate: "", endDate: "" })}`, {}, token),
+                  ]);
+                  setSummary(summaryPayload);
+                  setMoneyFlow(moneyFlowPayload);
+                  setCategoryBreakdown(categoryPayload);
+                  setMonthlyTrend(monthlyPayload);
+                  setBudgetVsActual(budgetPayload);
+                  setTopMerchants(merchantPayload);
+                } catch (requestError) {
+                  setError(errorMessage((requestError as Error).message));
+                } finally {
+                  setLoading(false);
+                }
+              })();
+            }}
+          >
+            Clear dates
+          </button>
+        </div>
+      </div>
+
+      {message ? <p className="notice success">{message}</p> : null}
+      {error ? <p className="notice error">{error}</p> : null}
+
+      <div className="dashboard-metric-grid reports-summary-grid">
+        <article className="metric-card">
+          <span className="label">Income</span>
+          <strong>{formatCurrency(summary?.income_total ?? 0)}</strong>
+          <p>Positive cash flow in the selected range.</p>
+        </article>
+        <article className="metric-card">
+          <span className="label">Expenses</span>
+          <strong>{formatCurrency(summary?.expense_total ?? 0)}</strong>
+          <p>Transfer merchants are excluded from the reporting totals.</p>
+        </article>
+        <article className="metric-card">
+          <span className="label">Net</span>
+          <strong>{formatCurrency(summary?.net_total ?? 0)}</strong>
+          <p>{summary?.start_date || summary?.end_date ? `${summary?.start_date ?? "Start"} to ${summary?.end_date ?? "End"}` : "All imported history"}</p>
+        </article>
+      </div>
+
+      <div className="reports-panel-grid">
+        <article className="preview-table-card">
+          <div className="table-header">
+            <div>
+              <h3>Money flow</h3>
+              <p className="muted-copy">Income and expense totals grouped by category.</p>
+            </div>
+            <button className="secondary-link" type="button" onClick={() => void exportReport("money-flow", "money-flow.csv")}>
+              Export CSV
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Direction</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Review</th>
+              </tr>
+            </thead>
+            <tbody>
+              {moneyFlow.map((row) => (
+                <tr key={`${row.direction}-${row.category}`}>
+                  <td>{row.direction}</td>
+                  <td>{row.category}</td>
+                  <td>{formatCurrency(row.amount)}</td>
+                  <td>
+                    {row.direction === "expense" ? (
+                      <button className="ghost-button" type="button" onClick={() => reviewCategory(row.category)}>
+                        Review spend
+                      </button>
+                    ) : (
+                      <span className="muted-copy">Income</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+
+        <article className="preview-table-card">
+          <div className="table-header">
+            <div>
+              <h3>Category breakdown</h3>
+              <p className="muted-copy">Largest expense categories in the selected range.</p>
+            </div>
+            <button
+              className="secondary-link"
+              type="button"
+              onClick={() => void exportReport("category-breakdown", "category-breakdown.csv")}
+            >
+              Export CSV
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Share</th>
+                <th>Count</th>
+                <th>Review</th>
+              </tr>
+            </thead>
+            <tbody>
+              {categoryBreakdown.map((row) => (
+                <tr key={row.category}>
+                  <td>{row.category}</td>
+                  <td>{formatCurrency(row.amount)}</td>
+                  <td>{formatPercent(row.share)}</td>
+                  <td>{row.transaction_count}</td>
+                  <td>
+                    <button className="ghost-button" type="button" onClick={() => reviewCategory(row.category)}>
+                      Open ledger
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+
+        <article className="preview-table-card">
+          <div className="table-header">
+            <div>
+              <h3>Monthly trend</h3>
+              <p className="muted-copy">Month-over-month income, spend, and net movement.</p>
+            </div>
+            <button className="secondary-link" type="button" onClick={() => void exportReport("monthly-trend", "monthly-trend.csv")}>
+              Export CSV
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Income</th>
+                <th>Expenses</th>
+                <th>Net</th>
+                <th>Review</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyTrend.map((row) => (
+                <tr key={row.month_start}>
+                  <td>{monthLabel(row.month_start)}</td>
+                  <td>{formatCurrency(row.income_total)}</td>
+                  <td>{formatCurrency(row.expense_total)}</td>
+                  <td>{formatCurrency(row.net_total)}</td>
+                  <td>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() =>
+                        onOpenTransactions({
+                          category: "",
+                          merchantId: "",
+                          uncategorizedOnly: false,
+                          startDate: row.month_start,
+                          endDate: endOfMonth(row.month_start),
+                        })
+                      }
+                    >
+                      Review month
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+
+        <article className="preview-table-card">
+          <div className="table-header">
+            <div>
+              <h3>Budget vs actual</h3>
+              <p className="muted-copy">Compare planned category limits against actual spend.</p>
+            </div>
+            <button
+              className="secondary-link"
+              type="button"
+              onClick={() => void exportReport("budget-vs-actual", "budget-vs-actual.csv")}
+            >
+              Export CSV
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Category</th>
+                <th>Planned</th>
+                <th>Actual</th>
+                <th>Variance</th>
+                <th>Review</th>
+              </tr>
+            </thead>
+            <tbody>
+              {budgetVsActual.map((row) => (
+                <tr key={`${row.month_start}-${row.category}`}>
+                  <td>{monthLabel(row.month_start)}</td>
+                  <td>{row.category}</td>
+                  <td>{formatCurrency(row.planned_amount)}</td>
+                  <td>{formatCurrency(row.actual_amount)}</td>
+                  <td>{formatCurrency(row.variance_amount)}</td>
+                  <td>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() =>
+                        onOpenTransactions({
+                          category: row.category,
+                          merchantId: "",
+                          uncategorizedOnly: false,
+                          startDate: row.month_start,
+                          endDate: endOfMonth(row.month_start),
+                        })
+                      }
+                    >
+                      Review spend
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+
+        <article className="preview-table-card reports-wide-panel">
+          <div className="table-header">
+            <div>
+              <h3>Top merchants</h3>
+              <p className="muted-copy">Highest-spend merchants for the current date range.</p>
+            </div>
+            <button className="secondary-link" type="button" onClick={() => void exportReport("top-merchants", "top-merchants.csv", 5)}>
+              Export CSV
+            </button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Merchant</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Transactions</th>
+                <th>Review</th>
+              </tr>
+            </thead>
+            <tbody>
+              {topMerchants.map((row) => (
+                <tr key={`${row.merchant_id ?? "none"}-${row.merchant_name}`}>
+                  <td>{row.merchant_name}</td>
+                  <td>{row.category ?? "Uncategorized"}</td>
+                  <td>{formatCurrency(row.amount)}</td>
+                  <td>{row.transaction_count}</td>
+                  <td>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() =>
+                        onOpenTransactions({
+                          category: "",
+                          merchantId: row.merchant_id ?? "",
+                          uncategorizedOnly: false,
+                          startDate,
+                          endDate,
+                        })
+                      }
+                    >
+                      Open ledger
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function BudgetCreator({ token }: { token: string }) {
   const [monthStart, setMonthStart] = useState("2026-04-01");
   const [step, setStep] = useState(1);
@@ -1997,6 +2555,13 @@ export function App() {
   const [token, setToken] = useState<string>(() => window.localStorage.getItem("private-ledger-token") ?? "");
   const [user, setUser] = useState<UserSummary | null>(null);
   const [view, setView] = useState<AppView>("dashboard");
+  const [transactionFilters, setTransactionFilters] = useState<TransactionFilters>({
+    category: "",
+    merchantId: "",
+    startDate: "",
+    endDate: "",
+    uncategorizedOnly: false,
+  });
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("secret-pass");
   const [loginError, setLoginError] = useState("");
@@ -2040,6 +2605,17 @@ export function App() {
     }
   }
 
+  function openTransactions(filters: Partial<TransactionFilters>) {
+    setTransactionFilters({
+      category: filters.category ?? "",
+      merchantId: filters.merchantId ?? "",
+      startDate: filters.startDate ?? "",
+      endDate: filters.endDate ?? "",
+      uncategorizedOnly: filters.uncategorizedOnly ?? false,
+    });
+    setView("transactions");
+  }
+
   return (
     <main className="app-shell">
       <section className="hero-panel">
@@ -2047,7 +2623,7 @@ export function App() {
           <p className="eyebrow">Authenticated Workspace</p>
           <h1>Private Ledger</h1>
           <p className="hero-copy">
-            Sign in to move between dashboard review, imports, ledger cleanup, recurring subscriptions, and monthly budget activation from one local-first workspace.
+            Sign in to move between dashboard review, imports, ledger cleanup, recurring subscriptions, monthly budget activation, and exportable reports from one local-first workspace.
           </p>
         </div>
 
@@ -2113,10 +2689,11 @@ export function App() {
           <div className="workspace-content">
             {view === "dashboard" ? <DashboardPage token={token} onNavigate={setView} /> : null}
             {view === "import" ? <ImportWizard token={token} /> : null}
-            {view === "transactions" ? <TransactionManager token={token} /> : null}
+            {view === "transactions" ? <TransactionManager token={token} initialFilters={transactionFilters} /> : null}
             {view === "merchants" ? <MerchantManager token={token} /> : null}
             {view === "subscriptions" ? <SubscriptionsPage token={token} /> : null}
             {view === "budget" ? <BudgetCreator token={token} /> : null}
+            {view === "reports" ? <ReportsPage token={token} onOpenTransactions={openTransactions} /> : null}
           </div>
         </div>
       )}
