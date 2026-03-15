@@ -5,16 +5,26 @@ import json
 from io import StringIO
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Sequence, cast
+from typing import Literal, Sequence, cast
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import Budget, Import, Merchant, MerchantAlias, MerchantStatus, Subscription, Transaction, User
+from app.db.models import (
+    Budget,
+    Import,
+    Merchant,
+    MerchantAlias,
+    MerchantStatus,
+    Subscription,
+    SubscriptionInterval,
+    Transaction,
+    User,
+)
 from app.db.session import get_db_session
 from app.dependencies.auth import get_current_user
 from app.importing.parser import ManualMappingRequirement, MappingValidationError, ProfileParseResult
@@ -25,6 +35,13 @@ from app.services.merchants import (
     list_merchant_summaries,
     merge_merchants,
     recategorize_transactions_for_merchant,
+)
+from app.services.subscriptions import (
+    SubscriptionInput,
+    create_subscription,
+    detect_recurring_subscriptions,
+    get_subscription_with_matches,
+    update_subscription as apply_subscription_update,
 )
 
 router = APIRouter(prefix="/api", tags=["ledger"])
@@ -117,6 +134,35 @@ class SubscriptionResponse(BaseModel):
     is_active: bool
     last_charged_on: date | None
     next_expected_on: date | None
+    recent_match_transaction_id: str | None = None
+
+
+class SubscriptionMatchResponse(BaseModel):
+    transaction_id: str
+    posted_on: date
+    description: str
+    amount: Decimal
+    category: str | None
+
+
+class SubscriptionDetailResponse(SubscriptionResponse):
+    recent_matches: list[SubscriptionMatchResponse] = Field(default_factory=list)
+
+
+class SubscriptionUpsertRequest(BaseModel):
+    display_name: str
+    category: str | None = None
+    interval: Literal["monthly", "annual", "variable"]
+    amount: Decimal
+    is_active: bool = True
+    merchant_id: str | None = None
+    last_charged_on: date | None = None
+    next_expected_on: date | None = None
+
+
+class SubscriptionDetectResponse(BaseModel):
+    detected_count: int
+    subscriptions: list[SubscriptionResponse]
 
 
 class BudgetResponse(BaseModel):
@@ -546,6 +592,44 @@ def commit_import_rows(
     )
 
 
+@router.post("/subscriptions/detect", response_model=SubscriptionDetectResponse)
+def detect_subscriptions(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> SubscriptionDetectResponse:
+    result = detect_recurring_subscriptions(session, user=user)
+    return SubscriptionDetectResponse(
+        detected_count=result.detected_count,
+        subscriptions=[SubscriptionResponse.model_validate(item, from_attributes=True) for item in result.subscriptions],
+    )
+
+
+@router.post("/subscriptions", response_model=SubscriptionResponse, status_code=status.HTTP_201_CREATED)
+def create_subscription_entry(
+    payload: SubscriptionUpsertRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> SubscriptionResponse:
+    if payload.merchant_id is not None and session.get(Merchant, payload.merchant_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+
+    subscription = create_subscription(
+        session,
+        user=user,
+        payload=SubscriptionInput(
+            display_name=payload.display_name,
+            category=payload.category,
+            interval=cast(SubscriptionInterval, payload.interval),
+            amount=payload.amount,
+            is_active=payload.is_active,
+            merchant_id=payload.merchant_id,
+            last_charged_on=payload.last_charged_on,
+            next_expected_on=payload.next_expected_on,
+        ),
+    )
+    return SubscriptionResponse.model_validate(subscription, from_attributes=True)
+
+
 @router.get("/subscriptions", response_model=list[SubscriptionResponse])
 def list_subscriptions(
     user: User = Depends(get_current_user),
@@ -555,14 +639,71 @@ def list_subscriptions(
     return [SubscriptionResponse.model_validate(item, from_attributes=True) for item in items]
 
 
-@router.get("/subscriptions/{subscription_id}", response_model=SubscriptionResponse)
+@router.patch("/subscriptions/{subscription_id}", response_model=SubscriptionResponse)
+def update_subscription(
+    subscription_id: str,
+    payload: SubscriptionUpsertRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> SubscriptionResponse:
+    subscription = cast(Subscription, _user_scoped_resource(session, Subscription, subscription_id, user.id))
+    merchant = None
+    if payload.merchant_id is not None:
+        merchant = session.get(Merchant, payload.merchant_id)
+        if merchant is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+
+    apply_subscription_update(
+        subscription,
+        payload=SubscriptionInput(
+            display_name=payload.display_name,
+            category=payload.category,
+            interval=cast(SubscriptionInterval, payload.interval),
+            amount=payload.amount,
+            is_active=payload.is_active,
+            merchant_id=payload.merchant_id,
+            last_charged_on=payload.last_charged_on,
+            next_expected_on=payload.next_expected_on,
+        ),
+        merchant=merchant,
+    )
+    session.add(subscription)
+    session.commit()
+    session.refresh(subscription)
+    return SubscriptionResponse.model_validate(subscription, from_attributes=True)
+
+
+@router.get("/subscriptions/{subscription_id}", response_model=SubscriptionDetailResponse)
 def get_subscription(
     subscription_id: str,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
-) -> SubscriptionResponse:
-    item = _user_scoped_resource(session, Subscription, subscription_id, user.id)
-    return SubscriptionResponse.model_validate(item, from_attributes=True)
+) -> SubscriptionDetailResponse:
+    item = cast(Subscription, _user_scoped_resource(session, Subscription, subscription_id, user.id))
+    detail = get_subscription_with_matches(session, subscription=item)
+    return SubscriptionDetailResponse(
+        id=detail.subscription.id,
+        user_id=detail.subscription.user_id,
+        merchant_id=detail.subscription.merchant_id,
+        display_name=detail.subscription.display_name,
+        category=detail.subscription.category,
+        interval=detail.subscription.interval,
+        amount=detail.subscription.amount,
+        is_active=detail.subscription.is_active,
+        last_charged_on=detail.subscription.last_charged_on,
+        next_expected_on=detail.subscription.next_expected_on,
+        recent_match_transaction_id=detail.subscription.recent_match_transaction_id,
+        recent_matches=[
+            SubscriptionMatchResponse(
+                transaction_id=match.transaction_id,
+                posted_on=match.posted_on,
+                description=match.description,
+                amount=match.amount,
+                category=match.category,
+            )
+            for match in detail.recent_matches
+        ],
+    )
 
 
 @router.get("/budgets", response_model=list[BudgetResponse])

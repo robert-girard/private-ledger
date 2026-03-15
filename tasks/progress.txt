@@ -11,6 +11,7 @@
 - Import preview uploads are staged under `IMPORT_STORAGE_DIR/<user-id>/...` and persisted as pending `imports` rows with `stored_path` set for later commit flows.
 - Import dedupe is keyed from `user_id`, `posted_on`, normalized `amount`, and normalized merchant text; commit flows should reuse that same hash logic instead of inventing per-endpoint duplicate checks.
 - Merchant registry endpoints are instance-scoped, but bulk recategorization logic must only mutate the authenticated user’s transactions when replaying merchant rules.
+- Recurring subscription detection groups negative transactions by merchant or normalized description in `app.services.subscriptions`; `/api/subscriptions/detect` upserts the detected rows so reruns stay idempotent.
 - Transaction review and CSV export should share one filter contract so the exported dataset matches the current filtered ledger view exactly.
 
 ## Progress Log
@@ -238,5 +239,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Browser verification must hit a backend process started after the latest API changes; stale local processes can make the UI look wrong even when the current code is correct.
   - Authenticated CSV export from the SPA cannot use a plain `<a>` link because the bearer token lives in client state rather than cookies.
   - Useful context (e.g., "the evaluation panel is in component X")
-  - The Transaction Manager currently lives alongside the Import Wizard in `frontend/src/App.tsx`, so the next UI stories can reuse the same auth shell and section-card structure before the app graduates to real routing.
+- The Transaction Manager currently lives alongside the Import Wizard in `frontend/src/App.tsx`, so the next UI stories can reuse the same auth shell and section-card structure before the app graduates to real routing.
+---
+## 2026-03-15 18:12 EDT - US-014
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Implemented deterministic recurring subscription detection for monthly, annual, and variable charge patterns in a dedicated backend subscription service.
+- Added `/api/subscriptions/detect`, manual subscription create/update endpoints, and subscription detail responses with recent matching charge history.
+- Added backend API tests covering detection persistence, idempotent re-detection, manual subscription editing, and recent-match detail behavior.
+- Files changed: `AGENTS.md`, `backend/app/api/ledger.py`, `backend/app/services/subscriptions.py`, `backend/tests/test_subscription_api.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Subscription detection belongs in `app.services.subscriptions`, where API-triggered detection and later budget-generation work can share the same deterministic grouping and upsert rules.
+  - `/api/subscriptions/detect` is designed to be rerun safely; detection updates existing subscription rows instead of inserting duplicates.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Recent subscription match queries must filter to negative transactions, or merchant-linked income rows can leak into subscription detail history.
+  - Manual subscription editing can attach a merchant directly, so detail-match queries should prefer `merchant_id` when present and only fall back to normalized display-name matching when it is absent.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The current backend now exposes the core contract the later Subscriptions page can use: detect, list, detail-with-matches, create, and update.
 ---
