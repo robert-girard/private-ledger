@@ -9,11 +9,16 @@ from pathlib import Path
 class Settings:
     app_host: str
     app_port: int
+    database_url: str
     frontend_dist_dir: Path
 
 
 settings = Settings(
     app_host=os.getenv("APP_HOST", "0.0.0.0"),
     app_port=int(os.getenv("APP_PORT", "8000")),
+    database_url=os.getenv(
+        "DATABASE_URL",
+        f"sqlite:///{(Path(__file__).resolve().parents[2] / 'data' / 'private-ledger.db')}",
+    ),
     frontend_dist_dir=Path(__file__).resolve().parents[2] / "frontend" / "dist",
 )

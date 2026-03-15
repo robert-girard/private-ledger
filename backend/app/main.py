@@ -7,8 +7,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.db.migrations import initialize_database
 
 app = FastAPI(title="Private Ledger")
+
+
+@app.on_event("startup")
+def initialize_app_database() -> None:
+    initialize_database(settings.database_url)
 
 
 @app.get("/api/health")

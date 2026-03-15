@@ -7,4 +7,6 @@ dist/
 .env
 backend/.venv/
 backend/.pytest_cache/
+backend/*.egg-info/
+data/
 frontend/dist/
