@@ -64,6 +64,7 @@ Required environment variables:
 - `APP_HOST`: host binding for local backend runs, defaults to `0.0.0.0`
 - `APP_PORT`: public port exposed by Docker Compose, defaults to `8000`
 - `DATABASE_URL`: SQLite database location, defaults to `sqlite:///data/private-ledger.db`
+- `PASSWORD_PEPPER`: server-side secret appended during password hashing; set a long random value outside development
 
 The FastAPI app serves `frontend/dist` directly when those assets exist. The
 container build performs the frontend compilation step automatically.
@@ -74,6 +75,7 @@ container build performs the frontend compilation step automatically.
 - Local backend-only development: run `uv run --project backend uvicorn app.main:app --app-dir backend --reload` and use `http://127.0.0.1:8000/api/health` for a quick smoke check.
 - Python environment management: use `uv sync --project backend --group dev` to install or refresh backend dependencies and dev tools.
 - Backend checks: run `uv run --project backend pyright app` and `uv run --project backend pytest` from the repo root or use the root `npm run typecheck` and `npm test` wrappers.
+- First admin bootstrap: run `uv run --project backend python -m app.bootstrap_admin --email admin@example.com --display-name "Household Admin"` and provide the password when prompted.
 - Local frontend development: run `npm --prefix frontend run dev` and use the Vite server for UI iteration; the current default address is `http://127.0.0.1:5173`.
 - Backend-served SPA verification: after frontend changes, rebuild assets with `npm --prefix frontend run build` so FastAPI serves the latest `frontend/dist` output.
 - Full-stack container verification: use `docker compose up --build` to rebuild the SPA and package it into the FastAPI container.

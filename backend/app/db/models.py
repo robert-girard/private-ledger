@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import uuid4
@@ -17,11 +17,11 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime(), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(),
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 
@@ -48,7 +48,7 @@ class RefreshTokenBlocklist(Base):
     id: Mapped[int] = mapped_column(Integer(), primary_key=True, autoincrement=True)
     token_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    revoked_at: Mapped[datetime] = mapped_column(DateTime(), default=datetime.utcnow)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(), default=lambda: datetime.now(UTC))
     expires_at: Mapped[datetime] = mapped_column(DateTime())
 
 

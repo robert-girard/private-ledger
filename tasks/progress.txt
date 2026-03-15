@@ -2,6 +2,7 @@
 - FastAPI serves the compiled SPA from `frontend/dist`, so deployment changes need the frontend build output path and backend static mount to stay in sync.
 - Python dependencies and backend tooling are managed with `uv` from `backend/pyproject.toml` and `backend/uv.lock`.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
+- Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
 
 ## Progress Log
 ## 2026-03-15 15:11 EDT - US-001
@@ -37,4 +38,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Docker needs `backend/uv.lock` copied explicitly because the lockfile lives beside the backend project, not at repo root.
   - Useful context (e.g., "the evaluation panel is in component X")
   - Backend startup now initializes the database automatically, so local and container boots create the baseline schema without a separate migration command.
+---
+## 2026-03-15 15:30 EDT - US-003
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Implemented Argon2id password hashing with explicit per-user salt storage and a server-side `PASSWORD_PEPPER`.
+- Added a service-layer bootstrap flow and CLI entrypoint for creating the first admin user only when the instance has no existing users.
+- Added security tests for hash verification, persisted password material, and first-admin-only bootstrap enforcement.
+- Documented the password pepper requirement and admin bootstrap command in the README and env example.
+- Files changed: `AGENTS.md`, `README.md`, `.env.example`, `backend/pyproject.toml`, `backend/uv.lock`, `backend/app/config.py`, `backend/app/db/models.py`, `backend/app/bootstrap_admin.py`, `backend/app/security/*`, `backend/app/services/*`, `backend/tests/test_security.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Password hashing is centralized in `app.security.passwords`, and user creation logic that stores credentials should go through that helper rather than rolling its own hashing.
+  - The first operator account is created through `python -m app.bootstrap_admin`, which already initializes the database if needed.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - `PASSWORD_PEPPER` is part of the verification material; changing it invalidates existing password checks.
+  - Parallel bootstrap attempts can race on an empty database, so integration tests for bootstrap behavior should run sequentially unless a lock is introduced later.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The current bootstrap restriction is enforced at the service layer by checking whether any user row already exists.
 ---
