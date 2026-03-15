@@ -31,6 +31,7 @@ from app.importing.parser import ManualMappingRequirement, MappingValidationErro
 from app.services.imports import commit_import as create_import_commit
 from app.services.imports import create_import_preview
 from app.services.budgets import activate_budget_month, generate_budget_plan, refresh_budget_spent_amounts
+from app.services.dashboard import get_budget_burn_down, get_dashboard_attention, get_dashboard_summary
 from app.services.merchants import (
     create_alias_rule,
     list_merchant_summaries,
@@ -269,6 +270,45 @@ class TransactionBulkDeleteRequest(BaseModel):
 class TransactionBulkResult(BaseModel):
     updated_count: int = 0
     deleted_count: int = 0
+
+
+class DashboardSummaryResponse(BaseModel):
+    month_start: date | None
+    total_budgeted: Decimal
+    spent_to_date: Decimal
+    projected_month_end: Decimal
+
+
+class DashboardBurnDownResponse(BaseModel):
+    category: str
+    planned_amount: Decimal
+    spent_amount: Decimal
+    remaining_amount: Decimal
+    status: str
+
+
+class DashboardAttentionSubscriptionResponse(BaseModel):
+    id: str
+    display_name: str
+    category: str | None
+    amount: Decimal
+    interval: str
+    next_expected_on: date | None
+
+
+class DashboardAttentionTransactionResponse(BaseModel):
+    id: str
+    posted_on: date
+    description: str
+    amount: Decimal
+    category: str | None
+    merchant_name: str | None
+
+
+class DashboardAttentionResponse(BaseModel):
+    upcoming_subscriptions: list[DashboardAttentionSubscriptionResponse]
+    recent_transactions: list[DashboardAttentionTransactionResponse]
+    unreviewed_merchant_count: int
 
 
 def _transaction_query_for_user(user_id: str):
@@ -818,6 +858,70 @@ def update_budget(
     session.commit()
     session.refresh(item)
     return _budget_response(item)
+
+
+@router.get("/dashboard/summary", response_model=DashboardSummaryResponse)
+def dashboard_summary(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> DashboardSummaryResponse:
+    summary = get_dashboard_summary(session, user=user)
+    return DashboardSummaryResponse(
+        month_start=summary.month_start,
+        total_budgeted=summary.total_budgeted,
+        spent_to_date=summary.spent_to_date,
+        projected_month_end=summary.projected_month_end,
+    )
+
+
+@router.get("/dashboard/burn-down", response_model=list[DashboardBurnDownResponse])
+def dashboard_burn_down(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> list[DashboardBurnDownResponse]:
+    return [
+        DashboardBurnDownResponse(
+            category=item.category,
+            planned_amount=item.planned_amount,
+            spent_amount=item.spent_amount,
+            remaining_amount=item.remaining_amount,
+            status=item.status,
+        )
+        for item in get_budget_burn_down(session, user=user)
+    ]
+
+
+@router.get("/dashboard/attention", response_model=DashboardAttentionResponse)
+def dashboard_attention(
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> DashboardAttentionResponse:
+    attention = get_dashboard_attention(session, user=user)
+    return DashboardAttentionResponse(
+        upcoming_subscriptions=[
+            DashboardAttentionSubscriptionResponse(
+                id=item.id,
+                display_name=item.display_name,
+                category=item.category,
+                amount=item.amount,
+                interval=item.interval,
+                next_expected_on=item.next_expected_on,
+            )
+            for item in attention.upcoming_subscriptions
+        ],
+        recent_transactions=[
+            DashboardAttentionTransactionResponse(
+                id=item.id,
+                posted_on=item.posted_on,
+                description=item.description,
+                amount=item.amount,
+                category=item.category,
+                merchant_name=item.merchant_name,
+            )
+            for item in attention.recent_transactions
+        ],
+        unreviewed_merchant_count=attention.unreviewed_merchant_count,
+    )
 
 
 @router.get("/merchants", response_model=list[MerchantResponse])

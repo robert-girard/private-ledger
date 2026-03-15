@@ -16,6 +16,7 @@
 - Subscription UI can use the existing list/detail/detect endpoints directly; detection is an explicit page action and detail views already include recent matching charges.
 - Budget generation should create or replace inactive `budgets` rows for a target month first, then activate that month in a separate step so review UIs can edit persisted recommendations before they become the live budget.
 - Budget Creator uses the persisted generate/edit/activate flow directly; the frontend can treat the budget rows themselves as the editable draft instead of inventing a separate client-only recommendation model.
+- Dashboard aggregation should refresh active budget spend from current-month transactions before computing totals or burn-down status, and transfer merchants should stay out of the spend math even when transfer transactions exist in the same month.
 - Transaction review and CSV export should share one filter contract so the exported dataset matches the current filtered ledger view exactly.
 
 ## Progress Log
@@ -324,4 +325,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - The generated row count currently reflects all recommendations even on step-specific views, so any later UX polish should decide whether that indicator should stay global or become step-local.
   - Useful context (e.g., "the evaluation panel is in component X")
   - Budget Creator now lives beside the other tool pages in `frontend/src/App.tsx`, and later dashboard work can reuse its budget summary numbers without needing new client-side aggregation first.
+---
+## 2026-03-15 19:07 EDT - US-018
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added dashboard aggregation endpoints for summary totals, category burn-down rows, and attention widgets covering upcoming subscriptions, recent transactions, and unreviewed merchant count.
+- Implemented a dedicated dashboard service that refreshes active budget spend from live transaction history, projects month-end spend from the latest in-month expense activity, and excludes transfer merchants from spend metrics.
+- Added backend tests covering dashboard summary totals, projected month-end math, burn-down status thresholds, transfer exclusion, upcoming subscription ordering, recent transaction filtering, and unreviewed merchant count.
+- Files changed: `AGENTS.md`, `backend/app/api/ledger.py`, `backend/app/services/dashboard.py`, `backend/tests/test_dashboard_api.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Dashboard aggregation now belongs in `app.services.dashboard`, which can serve both the future Dashboard page and any later summary/report widgets without duplicating spend math in route handlers.
+  - Active budget metrics should be based on refreshed `spent_amount` values for the active month, not stale stored numbers from an earlier generate step.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Transfer merchants must be filtered out before summary projection and burn-down status calculations, or internal account movement will inflate dashboard spending totals.
+  - Recent dashboard activity may need its own transfer-filter decision separate from summary math, so later UI work should keep those rules explicit instead of assuming one filter policy fits every widget.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The new backend surface for dashboard UI work is `GET /api/dashboard/summary`, `GET /api/dashboard/burn-down`, and `GET /api/dashboard/attention`.
 ---
