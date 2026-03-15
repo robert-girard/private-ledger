@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type AppView = "import" | "transactions" | "merchants" | "subscriptions" | "budget";
+type AppView = "dashboard" | "import" | "transactions" | "merchants" | "subscriptions" | "budget";
 
 type UserSummary = {
   email: string;
@@ -98,11 +98,51 @@ type BudgetRecommendation = {
   months_used: number;
 };
 
+type DashboardSummary = {
+  month_start: string | null;
+  total_budgeted: string;
+  spent_to_date: string;
+  projected_month_end: string;
+};
+
+type DashboardBurnDownItem = {
+  category: string;
+  planned_amount: string;
+  spent_amount: string;
+  remaining_amount: string;
+  status: "safe" | "warning" | "over";
+};
+
+type DashboardAttention = {
+  upcoming_subscriptions: Array<{
+    id: string;
+    display_name: string;
+    category: string | null;
+    amount: string;
+    interval: string;
+    next_expected_on: string | null;
+  }>;
+  recent_transactions: Array<{
+    id: string;
+    posted_on: string;
+    description: string;
+    amount: string;
+    category: string | null;
+    merchant_name: string | null;
+  }>;
+  unreviewed_merchant_count: number;
+};
+
 type ApiError = {
   detail?: string | { message?: string; errors?: string[] };
 };
 
 const views: Array<{ id: AppView; title: string; summary: string }> = [
+  {
+    id: "dashboard",
+    title: "Dashboard",
+    summary: "Track budget health, alerts, upcoming charges, and recent cleanup work at a glance.",
+  },
   {
     id: "import",
     title: "Import Wizard",
@@ -129,6 +169,233 @@ const views: Array<{ id: AppView; title: string; summary: string }> = [
     summary: "Generate a monthly budget, refine category limits, and activate the reviewed month.",
   },
 ];
+
+function formatCurrency(value: string | number): string {
+  const amount = typeof value === "number" ? value : Number(value);
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function formatInterval(interval: string): string {
+  return interval.charAt(0).toUpperCase() + interval.slice(1);
+}
+
+function DashboardPage({ token, onNavigate }: { token: string; onNavigate: (view: AppView) => void }) {
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [burnDown, setBurnDown] = useState<DashboardBurnDownItem[]>([]);
+  const [attention, setAttention] = useState<DashboardAttention | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadDashboard() {
+    setLoading(true);
+    setError("");
+    try {
+      const [summaryPayload, burnDownPayload, attentionPayload] = await Promise.all([
+        apiRequest<DashboardSummary>("/api/dashboard/summary", {}, token),
+        apiRequest<DashboardBurnDownItem[]>("/api/dashboard/burn-down", {}, token),
+        apiRequest<DashboardAttention>("/api/dashboard/attention", {}, token),
+      ]);
+      setSummary(summaryPayload);
+      setBurnDown(burnDownPayload);
+      setAttention(attentionPayload);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  const alertItems = burnDown.filter((item) => item.status !== "safe");
+  const highestSpend = Math.max(...burnDown.map((item) => Number(item.spent_amount)), 0);
+  const monthLabel = summary?.month_start
+    ? new Date(`${summary.month_start}T00:00:00`).toLocaleDateString("en-CA", {
+        month: "long",
+        year: "numeric",
+      })
+    : "No active budget month";
+
+  return (
+    <section className="workspace-card">
+      <div className="section-heading">
+        <p className="eyebrow">Dashboard</p>
+        <h2>Budget Health Overview</h2>
+        <p>Review current-month budget posture, spot categories near their limits, and jump to the workflows that need attention next.</p>
+      </div>
+
+      <div className="actions-row dashboard-header-actions">
+        <button className="primary-button" type="button" onClick={() => void loadDashboard()} disabled={loading}>
+          {loading ? "Refreshing..." : "Refresh dashboard"}
+        </button>
+        <button className="ghost-button" type="button" onClick={() => onNavigate("budget")}>
+          Open Budget Creator
+        </button>
+      </div>
+
+      {error ? <p className="notice error">{error}</p> : null}
+
+      {alertItems.length ? (
+        <div className="dashboard-alert-banner">
+          <strong>Threshold alerts</strong>
+          <p>
+            {alertItems.map((item) => `${item.category} is ${item.status === "over" ? "over budget" : "near its limit"}`).join(" • ")}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="dashboard-metric-grid">
+        <article className="metric-card">
+          <span className="label">Budget month</span>
+          <strong>{monthLabel}</strong>
+          <p>{summary?.month_start ? "Active budget rows are already reflected in this month." : "Generate and activate a monthly budget to unlock the dashboard."}</p>
+        </article>
+        <article className="metric-card">
+          <span className="label">Total budgeted</span>
+          <strong>{formatCurrency(summary?.total_budgeted ?? 0)}</strong>
+          <p>Combined planned spend across the active monthly budget.</p>
+        </article>
+        <article className="metric-card">
+          <span className="label">Spent to date</span>
+          <strong>{formatCurrency(summary?.spent_to_date ?? 0)}</strong>
+          <p>Transfer merchants stay out of this figure.</p>
+        </article>
+        <article className="metric-card">
+          <span className="label">Projected month-end</span>
+          <strong>{formatCurrency(summary?.projected_month_end ?? 0)}</strong>
+          <p>Projection is based on current-month spend pace through the latest charge date.</p>
+        </article>
+      </div>
+
+      <div className="split-layout dashboard-layout">
+        <article className="preview-table-card">
+          <div className="table-header">
+            <div>
+              <h3>Category burn-down</h3>
+              <p className="muted-copy">Threshold coloring highlights categories that need intervention before month end.</p>
+            </div>
+            <span>{burnDown.length} categories</span>
+          </div>
+
+          {burnDown.length ? (
+            <div className="burn-down-list">
+              {burnDown.map((item) => {
+                const spent = Number(item.spent_amount);
+                const planned = Number(item.planned_amount);
+                const ratio = planned > 0 ? Math.min(spent / planned, 1.25) : 0;
+                const width = `${Math.max(8, ratio * 100)}%`;
+                const compareWidth = `${Math.max(10, highestSpend > 0 ? (spent / highestSpend) * 100 : 10)}%`;
+
+                return (
+                  <div key={item.category} className={`burn-down-row burn-${item.status}`}>
+                    <div className="table-header burn-row-heading">
+                      <div>
+                        <strong>{item.category}</strong>
+                        <p className="muted-copy">
+                          {formatCurrency(item.spent_amount)} spent of {formatCurrency(item.planned_amount)}
+                        </p>
+                      </div>
+                      <span className={`status-pill ${item.status === "safe" ? "reviewed" : ""}`}>{item.status}</span>
+                    </div>
+                    <div className="burn-bar-track">
+                      <div className="burn-bar-compare" style={{ width: compareWidth }} />
+                      <div className="burn-bar-fill" style={{ width }} />
+                    </div>
+                    <div className="burn-stats">
+                      <span>Remaining {formatCurrency(item.remaining_amount)}</span>
+                      <span>{Math.round(ratio * 100)}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <p>No active budget data is available yet. Generate a monthly budget first, then return here for burn-down tracking.</p>
+            </div>
+          )}
+        </article>
+
+        <aside className="preview-metadata detail-panel dashboard-side-panel">
+          <div className="detail-section dashboard-widget">
+            <div className="table-header">
+              <h4>Upcoming subscriptions</h4>
+              <button className="ghost-button" type="button" onClick={() => onNavigate("subscriptions")}>
+                Open
+              </button>
+            </div>
+            {attention?.upcoming_subscriptions.length ? (
+              <div className="dashboard-list">
+                {attention.upcoming_subscriptions.map((item) => (
+                  <div key={item.id} className="dashboard-list-row">
+                    <div>
+                      <strong>{item.display_name}</strong>
+                      <p className="muted-copy">{item.category ?? "Unassigned"} • {formatInterval(item.interval)}</p>
+                    </div>
+                    <div className="dashboard-list-meta">
+                      <span>{formatCurrency(item.amount)}</span>
+                      <span>{item.next_expected_on ?? "TBD"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted-copy">No active upcoming subscriptions are scheduled.</p>
+            )}
+          </div>
+
+          <div className="detail-section dashboard-widget">
+            <div className="table-header">
+              <h4>Recent transactions</h4>
+              <button className="ghost-button" type="button" onClick={() => onNavigate("transactions")}>
+                Review
+              </button>
+            </div>
+            {attention?.recent_transactions.length ? (
+              <div className="dashboard-list">
+                {attention.recent_transactions.map((item) => (
+                  <div key={item.id} className="dashboard-list-row">
+                    <div>
+                      <strong>{item.description}</strong>
+                      <p className="muted-copy">{item.merchant_name ?? "Unknown merchant"} • {item.category ?? "Uncategorized"}</p>
+                    </div>
+                    <div className="dashboard-list-meta">
+                      <span>{formatCurrency(item.amount)}</span>
+                      <span>{item.posted_on}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted-copy">No recent transactions are available yet.</p>
+            )}
+          </div>
+
+          <div className="detail-section dashboard-widget">
+            <div className="table-header">
+              <h4>Unreviewed merchants</h4>
+              <button className="ghost-button" type="button" onClick={() => onNavigate("merchants")}>
+                Triage
+              </button>
+            </div>
+            <div className="dashboard-count-card">
+              <strong>{attention?.unreviewed_merchant_count ?? 0}</strong>
+              <p className="muted-copy">Shared merchant records still marked unreviewed across the instance.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
 
 function errorMessage(error: unknown): string {
   if (typeof error === "string") {
@@ -1729,7 +1996,7 @@ function BudgetCreator({ token }: { token: string }) {
 export function App() {
   const [token, setToken] = useState<string>(() => window.localStorage.getItem("private-ledger-token") ?? "");
   const [user, setUser] = useState<UserSummary | null>(null);
-  const [view, setView] = useState<AppView>("import");
+  const [view, setView] = useState<AppView>("dashboard");
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("secret-pass");
   const [loginError, setLoginError] = useState("");
@@ -1780,7 +2047,7 @@ export function App() {
           <p className="eyebrow">Authenticated Workspace</p>
           <h1>Private Ledger</h1>
           <p className="hero-copy">
-            The import flow is the first end-user workflow. Sign in, upload a CSV, review detection, and correct unsupported formats inline.
+            Sign in to move between dashboard review, imports, ledger cleanup, recurring subscriptions, and monthly budget activation from one local-first workspace.
           </p>
         </div>
 
@@ -1844,6 +2111,7 @@ export function App() {
           </aside>
 
           <div className="workspace-content">
+            {view === "dashboard" ? <DashboardPage token={token} onNavigate={setView} /> : null}
             {view === "import" ? <ImportWizard token={token} /> : null}
             {view === "transactions" ? <TransactionManager token={token} /> : null}
             {view === "merchants" ? <MerchantManager token={token} /> : null}

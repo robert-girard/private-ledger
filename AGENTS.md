@@ -43,4 +43,5 @@ This file defines the root-level guidance for agents working in this repository.
 - Budget generation belongs in `app.services.budgets`; generate month recommendations into persisted inactive `budgets` rows first, then flip activation separately so the UI can edit the same stored rows before going live.
 - The Budget Creator UI is a three-step shell flow over the budget endpoints: fixed subscription review, variable category review, then activation summary; keep it on the shared SPA shell until routing becomes necessary.
 - Dashboard aggregation now lives in `app.services.dashboard`; summary and burn-down calculations should refresh active budget `spent_amount` first and exclude transfer merchants from spend math before projecting or flagging categories.
+- The SPA still uses a shared shell with local `view` state instead of a router; cross-page dashboard shortcuts should switch that shell state rather than adding ad hoc links or a second navigation system.
 - Transaction query work should extend the main `/api/transactions` endpoint with filters and reuse the same filter set for `/api/transactions/export`, so the UI can export exactly the rows it is reviewing.

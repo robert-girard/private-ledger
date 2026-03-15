@@ -2,6 +2,7 @@
 - FastAPI serves the compiled SPA from `frontend/dist`, so deployment changes need the frontend build output path and backend static mount to stay in sync.
 - The Vite dev server proxies `/api` to `http://127.0.0.1:8000`, which keeps frontend API calls same-origin during local SPA development.
 - Authenticated frontend CSV exports should fetch the file with the bearer token and trigger a client-side download, because plain anchor links will miss the API auth header.
+- The SPA still uses one authenticated shell with local `view` state instead of routing, so new pages and quick actions should switch that shared view state rather than introduce parallel navigation patterns.
 - Python dependencies and backend tooling are managed with `uv` from `backend/pyproject.toml` and `backend/uv.lock`.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
@@ -341,4 +342,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Recent dashboard activity may need its own transfer-filter decision separate from summary math, so later UI work should keep those rules explicit instead of assuming one filter policy fits every widget.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The new backend surface for dashboard UI work is `GET /api/dashboard/summary`, `GET /api/dashboard/burn-down`, and `GET /api/dashboard/attention`.
+---
+## 2026-03-15 19:21 EDT - US-019
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added a Dashboard page to the shared authenticated SPA shell with hero metrics, threshold alerts, category burn-down cards, and attention widgets for subscriptions, recent transactions, and unreviewed merchants.
+- Kept the page thin by loading `GET /api/dashboard/summary`, `GET /api/dashboard/burn-down`, and `GET /api/dashboard/attention` in parallel, then wiring widget actions back into the existing shell view state for quick navigation to Budget Creator, Transaction Manager, Merchant Manager, and Subscriptions.
+- Verified the page in the browser using `playwright-cli` against a temporary local backend on `http://127.0.0.1:8010`: signed in, confirmed the alert banner plus summary metrics rendered from seeded data, reviewed the burn-down rows and attention widgets, used the dashboard “Review” action to switch into Transaction Manager, then returned to Dashboard. Screenshot: `/tmp/private-ledger-us019-dashboard.png`.
+- Files changed: `AGENTS.md`, `frontend/src/App.tsx`, `frontend/src/styles.css`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Dashboard UI can stay thin by composing the three existing dashboard endpoints in parallel instead of duplicating any budget or transaction aggregation logic in the client.
+  - Quick actions on later pages should keep using the shared shell `view` state for cross-page navigation until the app intentionally graduates to routing.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Browser verification needs an activated budget month plus recent transactions, or the dashboard page will render but most widgets will look empty and fail to prove the real workflow.
+  - Dashboard projections and alerts can legitimately differ from the backend fixture test values when seeded verification data changes, so browser checks should validate the presence and coherence of widgets rather than one hardcoded number.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The Dashboard page now lives in `frontend/src/App.tsx` beside the other tool pages and defaults to the first signed-in view in the current shell.
 ---
