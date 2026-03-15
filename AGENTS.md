@@ -30,3 +30,4 @@ This file defines the root-level guidance for agents working in this repository.
 - Initial operator bootstrap uses `python -m app.bootstrap_admin`; password hashing depends on `PASSWORD_PEPPER`, so auth-related work must preserve that env var in local and container runs.
 - Auth endpoints live under `app.api.auth`; refresh-token rotation works by writing old token JTIs into `refresh_token_blocklist`, so refresh and logout changes must keep the JWT service and blocklist table behavior aligned.
 - User-scoped APIs should resolve the current user through `app.dependencies.auth.get_current_user` and filter private models by `user_id`; merchant and merchant alias records remain instance-scoped and should not be user-filtered.
+- CSV parser profiles live under `app.importing`; unknown headers should return a manual-mapping requirement object instead of raising or silently guessing.

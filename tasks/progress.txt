@@ -5,6 +5,7 @@
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
 - Refresh-token rotation and logout revocation are implemented by storing revoked refresh-token JTIs in `refresh_token_blocklist`.
 - Private financial records are filtered through `user_id` after `get_current_user` resolves the access token, while merchant and merchant-alias queries stay instance-scoped.
+- CSV import profile detection lives in `app.importing.parser`; unsupported headers should return a manual-mapping requirement structure rather than failing implicitly.
 
 ## Progress Log
 ## 2026-03-15 15:11 EDT - US-001
@@ -91,4 +92,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Access-token tests need to log in each fixture user separately because the auth layer only trusts signed bearer tokens, not raw user IDs.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The new ledger API surface is intentionally minimal and exists mainly to establish the scoping and authorization pattern for later feature stories.
+---
+## 2026-03-15 16:13 EDT - US-006
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added CSV parser profiles for TD, RBC, Tangerine, CIBC, and Scotiabank with profile-specific date and amount normalization rules.
+- Added a structured manual-mapping requirement result for unsupported headers instead of failing silently.
+- Added fixture-backed parser tests covering all supported bank profiles and the unknown-header fallback.
+- Files changed: `AGENTS.md`, `backend/app/importing/*`, `backend/tests/fixtures/csv/*`, `backend/tests/test_csv_parser.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Parser detection should be header-driven and return normalized rows in a stable internal shape before any import API is layered on top.
+  - Unknown CSV formats should return an explicit manual-mapping requirement object so later UI and API work can guide the user instead of guessing.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - `csv.DictReader.fieldnames` needs to be normalized to a concrete `list[str]` to keep pyright happy in profile dispatch code.
+  - Different bank profiles normalize debits and credits differently, so amount handling should stay profile-specific rather than assuming one shared sign convention.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The fixture set under `backend/tests/fixtures/csv` is now the baseline reference for profile behavior and should be extended alongside parser changes.
 ---
