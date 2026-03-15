@@ -1,5 +1,6 @@
 ## Codebase Patterns
 - FastAPI serves the compiled SPA from `frontend/dist`, so deployment changes need the frontend build output path and backend static mount to stay in sync.
+- The Vite dev server proxies `/api` to `http://127.0.0.1:8000`, which keeps frontend API calls same-origin during local SPA development.
 - Python dependencies and backend tooling are managed with `uv` from `backend/pyproject.toml` and `backend/uv.lock`.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
@@ -187,5 +188,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Merchant records are global, but re-categorization must stay user-scoped or one household user can rewrite another user’s private transaction history.
   - Merge flows need to carry aliases forward before deleting the source merchant, otherwise normalized historical matches are lost.
   - Useful context (e.g., "the evaluation panel is in component X")
-  - The merchant action regression coverage is in `backend/tests/test_merchant_management_api.py` and currently exercises the whole list-update-alias-recategorize-bulk-merge flow in one place.
+- The merchant action regression coverage is in `backend/tests/test_merchant_management_api.py` and currently exercises the whole list-update-alias-recategorize-bulk-merge flow in one place.
+---
+## 2026-03-15 17:37 EDT - US-010
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Replaced the placeholder SPA shell with a session-aware Import Wizard page that supports local sign-in, CSV upload, backend preview calls, detected profile summaries, inline preview tables, and manual mapping controls for unsupported headers.
+- Added a lightweight frontend API client flow for bearer-token login and protected import requests, plus a Vite `/api` proxy so local frontend development can call the FastAPI backend without custom origins.
+- Verified the UI in the browser using `playwright-cli`: signed in against a temporary local backend on `http://127.0.0.1:8010`, previewed `td.csv`, confirmed detected profile and preview rows, then uploaded `unknown.csv` and confirmed the manual mapping controls rendered. Screenshot: `/tmp/private-ledger-us010/import-wizard.png`.
+- Files changed: `AGENTS.md`, `frontend/src/App.tsx`, `frontend/src/styles.css`, `frontend/vite.config.ts`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - The SPA now keeps a bearer token in `localStorage` and rehydrates the session through `/api/me`, which gives later frontend pages a minimal shared auth path without a full router or auth framework yet.
+  - Import UI work can reuse the same `PreviewResponse` shape for both detected profiles and manual-mapping-required states instead of branching on separate endpoints.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Local browser verification can conflict with any existing backend already bound to `127.0.0.1:8000`; when that happens, build the frontend and point a temporary FastAPI instance at another port for same-origin verification.
+  - The file chooser is exposed as a button in `playwright-cli`, so browser upload verification requires clicking the chooser first and then issuing an `upload` command.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The current SPA only exposes the Import Wizard view, but the authenticated shell and nav card structure are now in place for later Transaction, Merchant, Subscription, Budget, Dashboard, and Reports pages.
 ---

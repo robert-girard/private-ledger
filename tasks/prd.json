@@ -158,7 +158,7 @@
         "Verify in browser using playwright-cli skill"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "This is the missing frontend counterpart to US-006 through US-008 and should be treated as the first meaningful import UI milestone."
     },
     {
