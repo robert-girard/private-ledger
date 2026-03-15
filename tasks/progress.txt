@@ -109,3 +109,17 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Useful context (e.g., "the evaluation panel is in component X")
   - The fixture set under `backend/tests/fixtures/csv` is now the baseline reference for profile behavior and should be extended alongside parser changes.
 ---
+## 2026-03-15 16:18 EDT - Planning
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Reordered the remaining story priorities so Merchant Manager no longer appears as the first meaningful UI milestone in the split task plan.
+- Added planning notes that the split `prd.json` is still missing a dedicated frontend Import page story even though import is the first end-user workflow in the human-readable PRD.
+- Files changed: `tasks/prd.json`, `tasks/prd-private-ledger.md`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - When the split implementation plan drifts from the human-readable PRD, capture the mismatch directly in the task files so later iterations do not optimize for the wrong milestone.
+  - Merchant Manager depends on committed import data; without an import UI, Transaction Manager is the first realistically usable frontend milestone in the current split plan.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Reordering priorities alone does not create the missing Import page story; future planning should add that story explicitly if UI-first usability matters.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The human-readable PRD already treats import as an early user workflow, so the split plan should be checked against it whenever the milestone sequence feels off.
+---

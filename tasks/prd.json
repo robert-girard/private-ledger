@@ -143,7 +143,7 @@
       ],
       "priority": 9,
       "passes": false,
-      "notes": ""
+      "notes": "Keep this backend story ahead of any Merchant Manager UI work so committed imports can populate merchant records first."
     },
     {
       "id": "US-010",
@@ -157,9 +157,9 @@
         "Typecheck passes",
         "Verify in browser using playwright-cli skill"
       ],
-      "priority": 10,
+      "priority": 13,
       "passes": false,
-      "notes": ""
+      "notes": "This UI only becomes useful after import preview, transaction commit, and merchant backend actions exist. The split plan still needs a dedicated Import page frontend story before this becomes a meaningful first-use UI milestone."
     },
     {
       "id": "US-011",
@@ -174,7 +174,7 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 11,
+      "priority": 10,
       "passes": false,
       "notes": ""
     },
@@ -191,9 +191,9 @@
         "Typecheck passes",
         "Verify in browser using playwright-cli skill"
       ],
-      "priority": 12,
+      "priority": 11,
       "passes": false,
-      "notes": ""
+      "notes": "Transaction Manager is currently the first frontend story with a meaningful post-import review workflow in the split plan."
     },
     {
       "id": "US-013",
@@ -207,7 +207,7 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 13,
+      "priority": 12,
       "passes": false,
       "notes": ""
     },
