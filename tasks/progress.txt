@@ -1,0 +1,5 @@
+## Codebase Patterns
+- None yet. Add reusable conventions here as Ralph iterations discover them.
+
+## Progress Log
+- No stories completed yet.

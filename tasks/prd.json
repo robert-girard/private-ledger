@@ -1,0 +1,359 @@
+{
+  "project": "Private Ledger",
+  "branchName": "ralph/private-ledger-v1-mvp",
+  "description": "Build the v1 MVP of Private Ledger: a self-hosted, privacy-first personal finance app with CSV import, merchant management, budgeting, dashboard analytics, reporting, and secure multi-user household support.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Scaffold deployable FastAPI and React application",
+      "description": "As a developer, I want a deployable application skeleton so that all later features have a stable backend, frontend, and Docker Compose foundation.",
+      "acceptanceCriteria": [
+        "Create FastAPI app entrypoint and mount a compiled frontend asset directory",
+        "Create Vite React TypeScript app shell with a placeholder authenticated layout",
+        "Add Docker Compose configuration and app container build files",
+        "Document local startup command and required environment variables",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Create core database schema and migration baseline",
+      "description": "As a developer, I want the core SQLite schema in place so that features can build on stable persistence models.",
+      "acceptanceCriteria": [
+        "Define initial schema for users, refresh token blocklist, merchants, merchant aliases, imports, transactions, subscriptions, and budgets",
+        "Generate baseline migration for the schema",
+        "Database initializes successfully in a fresh environment",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add secure password hashing and login persistence models",
+      "description": "As an operator, I want secure account storage so that local user accounts are protected correctly.",
+      "acceptanceCriteria": [
+        "Implement Argon2id password hashing with site pepper support",
+        "Store per-user salt and hashed password in the user model",
+        "Add seed or bootstrap flow for the first admin user",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement login, refresh, logout, and token revocation endpoints",
+      "description": "As a user, I want session-based authentication so that I can sign in securely and stay logged in.",
+      "acceptanceCriteria": [
+        "Add login endpoint that issues short-lived access token and refresh token",
+        "Add refresh endpoint that rotates refresh tokens",
+        "Add logout endpoint that revokes the active refresh token",
+        "Revoked refresh tokens cannot be reused",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Enforce user isolation and shared merchant registry rules",
+      "description": "As a household user, I want my private financial records isolated so that other users cannot access them, while merchant metadata remains shared at the instance level.",
+      "acceptanceCriteria": [
+        "Add authenticated request context with current user resolution",
+        "Restrict transaction, budget, import, and subscription queries to the current user",
+        "Keep merchant and merchant alias records instance-scoped rather than user-scoped",
+        "Unauthorized cross-user access is rejected in tests",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Implement bank profile detection for supported CSV formats",
+      "description": "As a user, I want common bank CSV formats recognized automatically so that imports require minimal manual setup.",
+      "acceptanceCriteria": [
+        "Add parser profiles for TD, RBC, Tangerine, CIBC, and Scotiabank CSV headers",
+        "Support the date and amount normalization rules required by each profile",
+        "Unknown headers return a structured manual-mapping requirement instead of failing silently",
+        "Fixture-based parser tests cover all supported profiles",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add import preview API with manual column mapping support",
+      "description": "As a user, I want to preview parsed rows and adjust column mappings so that I can verify imports before committing transactions.",
+      "acceptanceCriteria": [
+        "Add upload endpoint that stores the source CSV in a sandboxed temporary location",
+        "Return detected mapping or unresolved columns for manual assignment",
+        "Return a preview of parsed rows before commit",
+        "Invalid mappings produce actionable validation errors",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Commit imported transactions with normalization and deduplication",
+      "description": "As a user, I want overlapping imports deduplicated automatically so that my ledger remains accurate.",
+      "acceptanceCriteria": [
+        "Normalize transaction date, amount, and merchant values before insert",
+        "Generate deterministic dedupe hash from user, date, amount, and normalized merchant",
+        "Skip duplicate transactions and report inserted, skipped, and failed counts",
+        "Create merchant records automatically for previously unseen merchants",
+        "Overlapping import tests produce zero false positives",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Build merchant management backend actions",
+      "description": "As a user, I want merchant records and alias rules managed centrally so that categorization stays consistent over time.",
+      "acceptanceCriteria": [
+        "Add merchant list, update, merge, and alias-rule endpoints",
+        "Support transfer flag and reviewed or unreviewed status updates",
+        "Add bulk category assignment action",
+        "Add historical re-categorization action that reapplies merchant rules to past transactions",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Build Merchant Manager page",
+      "description": "As a user, I want a Merchant Manager interface so that I can review merchants, assign categories, and clean up aliases.",
+      "acceptanceCriteria": [
+        "Display merchant table with display name, raw name, category, transaction count, last seen, status, and transfer flag",
+        "Support search and filters for status, category, and transfer flag",
+        "Allow inline edits for display name and category",
+        "Open a detail panel for alias rules, merge actions, and recent transactions",
+        "Typecheck passes",
+        "Verify in browser using playwright-cli skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Add transaction query and export backend",
+      "description": "As a user, I want transaction APIs with filters and export support so that I can audit and analyze ledger data.",
+      "acceptanceCriteria": [
+        "Add transaction list endpoint with filters for date range, category, merchant, amount range, import source, and categorization status",
+        "Add uncategorized-only filter option",
+        "Add inline category update endpoint for a single transaction",
+        "Add bulk re-categorize and bulk delete actions",
+        "Add CSV export for the filtered transaction result set",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Build Transaction Manager page",
+      "description": "As a user, I want a searchable transaction manager so that I can review, fix, and export my ledger.",
+      "acceptanceCriteria": [
+        "Render paginated transaction table with filter controls",
+        "Show uncategorized count and allow one-click uncategorized filtering",
+        "Allow inline category override without leaving the page",
+        "Support row selection for bulk actions",
+        "Expose CSV export for the current filtered view",
+        "Typecheck passes",
+        "Verify in browser using playwright-cli skill"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Implement recurring detection and subscription persistence",
+      "description": "As a user, I want recurring charges detected from transaction history so that fixed spending can feed the budgeting flow.",
+      "acceptanceCriteria": [
+        "Add deterministic recurring-detection logic for monthly, annual, and variable subscriptions",
+        "Persist detected subscriptions and support manually created subscriptions",
+        "Store amount, interval, active state, and recent match metadata",
+        "Detection logic is covered by tests for fixed and variable recurring patterns",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Build Subscriptions page",
+      "description": "As a user, I want a subscriptions page so that I can review, edit, and manage recurring spending entries.",
+      "acceptanceCriteria": [
+        "Display subscription list with display name, category, interval, amount, last charged, next expected, and active state",
+        "Support filters for all, monthly, annual, and inactive subscriptions",
+        "Allow manual subscription creation and editing",
+        "Show recent matching transactions for a selected subscription",
+        "Typecheck passes",
+        "Verify in browser using playwright-cli skill"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Implement baseline budget generation and activation backend",
+      "description": "As a user, I want a baseline budget generated from history so that I can start budgeting immediately after importing transactions.",
+      "acceptanceCriteria": [
+        "Generate fixed budget entries from active subscriptions",
+        "Generate variable category limits from historical averages with fallback when history is limited",
+        "Persist monthly budget records and active-state metadata",
+        "Budget generation completes successfully against realistic fixture data",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Build Budget Creator flow",
+      "description": "As a user, I want a guided budget creation flow so that I can review and activate generated budget recommendations.",
+      "acceptanceCriteria": [
+        "Create multi-step budget flow for subscription review, variable limit edits, and final activation",
+        "Pre-fill editable values from generated backend recommendations",
+        "Allow activation of the current month budget from the final step",
+        "Show a complete summary before activation",
+        "Typecheck passes",
+        "Verify in browser using playwright-cli skill"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Add dashboard aggregation endpoints",
+      "description": "As a developer, I want dashboard aggregates computed server-side so that the UI can render budget health and recent activity efficiently.",
+      "acceptanceCriteria": [
+        "Add endpoint for total budgeted, spent to date, and projected month-end values",
+        "Add endpoint for category burn-down data with threshold status",
+        "Add endpoint for upcoming subscriptions, recent transactions, and unreviewed merchant count",
+        "Aggregation logic excludes transfers where appropriate",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Build Dashboard page",
+      "description": "As a user, I want a dashboard overview so that I can quickly understand my current budget state and pending cleanup work.",
+      "acceptanceCriteria": [
+        "Render hero metrics for total budgeted, spent to date, and projected month-end",
+        "Render category burn-down visualization with threshold coloring",
+        "Render upcoming subscriptions, recent transactions, and unreviewed merchants widgets",
+        "Render alert banner for categories over warning thresholds",
+        "Typecheck passes",
+        "Verify in browser using playwright-cli skill"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Add reporting aggregation endpoints",
+      "description": "As a developer, I want reporting endpoints for charts and exports so that the reports page can analyze spending over time.",
+      "acceptanceCriteria": [
+        "Add date-range aware endpoints for money flow, category breakdown, monthly trend, budget-vs-actual, top merchants, and income-vs-expenses summary",
+        "Exclude transfer transactions from reporting totals where appropriate",
+        "Add CSV export endpoints for report datasets",
+        "Tests cover date filtering and category aggregation logic",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Build Reports page",
+      "description": "As a user, I want interactive reports so that I can understand spending trends, category distribution, and top merchants.",
+      "acceptanceCriteria": [
+        "Render global date range selector for the reports page",
+        "Render money flow, category breakdown, monthly trend, budget-vs-actual, top merchants, and summary panels",
+        "Support drill-through from report segments to filtered transactions where implemented",
+        "Expose CSV export actions for report datasets",
+        "Typecheck passes",
+        "Verify in browser using playwright-cli skill"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Add security hardening for auth, uploads, and response headers",
+      "description": "As an operator, I want core security controls enforced so that the local deployment is safer by default.",
+      "acceptanceCriteria": [
+        "Add rate limiting for login and refresh endpoints",
+        "Trigger temporary lockout after repeated authentication failures",
+        "Store uploaded CSV files using UUID-backed sandboxed filenames",
+        "Emit HSTS and Content-Security-Policy headers from the app",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Document deployment, maintenance, and smoke-test workflow",
+      "description": "As a technical operator, I want clear operating documentation so that I can deploy, update, and validate the stack reliably.",
+      "acceptanceCriteria": [
+        "Document setup, environment variables, and compose startup in README",
+        "Pin backend and frontend dependency versions in project manifests",
+        "Add smoke-test checklist or automated script for clean-environment startup",
+        "Document local backup or database export procedure",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
