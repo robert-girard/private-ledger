@@ -1,0 +1,13 @@
+{
+  "name": "private-ledger",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "typecheck": "npm run typecheck:backend && npm run typecheck:frontend",
+    "typecheck:backend": "pyright --pythonpath .venv/bin/python backend/app",
+    "typecheck:frontend": "npm --prefix frontend run typecheck"
+  },
+  "devDependencies": {
+    "pyright": "1.1.405"
+  }
+}

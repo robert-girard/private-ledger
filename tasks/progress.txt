@@ -1,5 +1,21 @@
 ## Codebase Patterns
-- None yet. Add reusable conventions here as Ralph iterations discover them.
+- FastAPI serves the compiled SPA from `frontend/dist`, so deployment changes need the frontend build output path and backend static mount to stay in sync.
 
 ## Progress Log
-- No stories completed yet.
+## 2026-03-15 15:11 EDT - US-001
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Implemented a FastAPI backend scaffold with `/api/health` and SPA fallback routing for compiled frontend assets.
+- Added a Vite + React + TypeScript authenticated-shell placeholder covering the six planned v1 product areas.
+- Added Docker Compose and a multi-stage Dockerfile that builds the frontend and serves it from the backend container.
+- Documented local setup, environment variables, backend startup, and Docker startup in the README.
+- Files changed: `README.md`, `AGENTS.md`, `.gitignore`, `.env.example`, `package.json`, `package-lock.json`, `Dockerfile`, `docker-compose.yml`, `backend/*`, `frontend/*`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - The root `npm run typecheck` command covers both backend and frontend, and backend `pyright` must use the repo `.venv` Python path.
+  - The backend is the deployment entrypoint and expects built SPA assets at `frontend/dist`.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - FastAPI catch-all SPA routes need `response_model=None` when returning response subclasses directly.
+  - `docker compose config` expects a real `.env` file because the compose file uses `env_file`.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The frontend scaffold is intentionally a placeholder authenticated shell; later UI stories can replace card content without changing the deployment baseline.
+---

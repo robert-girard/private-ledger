@@ -1,0 +1,118 @@
+:root {
+  color: #f5efe5;
+  background:
+    radial-gradient(circle at top, rgba(216, 164, 92, 0.28), transparent 30%),
+    linear-gradient(135deg, #11212d 0%, #06141b 55%, #1f2937 100%);
+  font-family: "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  width: min(1120px, calc(100vw - 2rem));
+  margin: 0 auto;
+  padding: 3rem 0 4rem;
+}
+
+.hero-panel,
+.status-panel,
+.card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 15, 21, 0.72);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+.hero-panel {
+  border-radius: 28px;
+  padding: 2rem;
+}
+
+.eyebrow,
+.label {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  color: #d8a45c;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  margin-top: 0.5rem;
+  font-size: clamp(2.8rem, 8vw, 4.8rem);
+  line-height: 0.95;
+}
+
+.hero-copy {
+  margin-top: 1rem;
+  max-width: 60ch;
+  color: #d4dce2;
+  font-size: 1.05rem;
+}
+
+.status-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  border-radius: 20px;
+}
+
+.status-panel strong {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 1.1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.card {
+  min-height: 180px;
+  padding: 1.5rem;
+  border-radius: 20px;
+}
+
+.card h2 {
+  font-size: 1.25rem;
+}
+
+.card p {
+  margin-top: 0.9rem;
+  color: #c4cdd3;
+}
+
+@media (max-width: 900px) {
+  .status-panel,
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell {
+    padding-top: 1.5rem;
+  }
+}

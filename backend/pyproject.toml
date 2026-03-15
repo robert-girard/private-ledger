@@ -1,0 +1,18 @@
+[project]
+name = "private-ledger-backend"
+version = "0.1.0"
+description = "FastAPI backend for Private Ledger"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.116.1",
+  "uvicorn[standard]==0.35.0"
+]
+
+[build-system]
+requires = ["setuptools>=80.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pyright]
+pythonVersion = "3.12"
+include = ["app"]
+typeCheckingMode = "strict"

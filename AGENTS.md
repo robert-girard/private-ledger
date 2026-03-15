@@ -24,4 +24,4 @@ This file defines the root-level guidance for agents working in this repository.
 
 ## Codebase Patterns
 
-- None yet.
+- FastAPI is responsible for serving the compiled SPA from `frontend/dist`; keep frontend build output and backend static asset paths aligned when changing deployment wiring.
