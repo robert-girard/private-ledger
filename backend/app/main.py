@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.config import settings
+from app.api.auth import router as auth_router
+from app.config import get_settings
 from app.db.migrations import initialize_database
 
-app = FastAPI(title="Private Ledger")
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    initialize_database(get_settings().database_url)
+    yield
 
 
-@app.on_event("startup")
-def initialize_app_database() -> None:
-    initialize_database(settings.database_url)
+app = FastAPI(title="Private Ledger", lifespan=lifespan)
+app.include_router(auth_router)
 
 
 @app.get("/api/health")
@@ -23,7 +28,7 @@ def healthcheck() -> JSONResponse:
 
 
 def _frontend_dist() -> Path:
-    return settings.frontend_dist_dir
+    return get_settings().frontend_dist_dir
 
 
 if (_frontend_dist() / "assets").exists():

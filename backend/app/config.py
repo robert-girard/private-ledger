@@ -11,6 +11,9 @@ class Settings:
     app_port: int
     database_url: str
     password_pepper: str
+    auth_secret_key: str
+    access_token_ttl_minutes: int
+    refresh_token_ttl_days: int
     frontend_dist_dir: Path
 
 
@@ -22,5 +25,12 @@ settings = Settings(
         f"sqlite:///{(Path(__file__).resolve().parents[2] / 'data' / 'private-ledger.db')}",
     ),
     password_pepper=os.getenv("PASSWORD_PEPPER", "development-only-pepper"),
+    auth_secret_key=os.getenv("AUTH_SECRET_KEY", "development-auth-secret"),
+    access_token_ttl_minutes=int(os.getenv("ACCESS_TOKEN_TTL_MINUTES", "15")),
+    refresh_token_ttl_days=int(os.getenv("REFRESH_TOKEN_TTL_DAYS", "14")),
     frontend_dist_dir=Path(__file__).resolve().parents[2] / "frontend" / "dist",
 )
+
+
+def get_settings() -> Settings:
+    return settings

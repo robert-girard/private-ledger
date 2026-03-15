@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import settings
+from app.config import get_settings
 
 
 def _sqlite_path(database_url: str) -> Path:
@@ -40,8 +40,17 @@ def create_engine_for_url(database_url: str) -> Engine:
     return engine
 
 
-engine = create_engine_for_url(settings.database_url)
+engine = create_engine_for_url(get_settings().database_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+
+
+def configure_session_factory(database_url: str) -> None:
+    global engine
+    global SessionLocal
+
+    engine.dispose()
+    engine = create_engine_for_url(database_url)
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
 def get_db_session() -> Generator[Session, None, None]:

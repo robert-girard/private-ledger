@@ -65,6 +65,9 @@ Required environment variables:
 - `APP_PORT`: public port exposed by Docker Compose, defaults to `8000`
 - `DATABASE_URL`: SQLite database location, defaults to `sqlite:///data/private-ledger.db`
 - `PASSWORD_PEPPER`: server-side secret appended during password hashing; set a long random value outside development
+- `AUTH_SECRET_KEY`: HMAC secret used for access and refresh token signing
+- `ACCESS_TOKEN_TTL_MINUTES`: access token lifetime in minutes, defaults to `15`
+- `REFRESH_TOKEN_TTL_DAYS`: refresh token lifetime in days, defaults to `14`
 
 The FastAPI app serves `frontend/dist` directly when those assets exist. The
 container build performs the frontend compilation step automatically.

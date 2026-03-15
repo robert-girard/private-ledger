@@ -28,3 +28,4 @@ This file defines the root-level guidance for agents working in this repository.
 - Python dependency management uses `uv` with `backend/pyproject.toml` and `backend/uv.lock`; prefer `uv run --project backend ...` and `uv sync --project backend --group dev` over ad hoc virtualenv commands.
 - SQLite schema changes should ship as ordered SQL files in `backend/migrations`, and the backend startup path applies them through `app.db.migrations.initialize_database`.
 - Initial operator bootstrap uses `python -m app.bootstrap_admin`; password hashing depends on `PASSWORD_PEPPER`, so auth-related work must preserve that env var in local and container runs.
+- Auth endpoints live under `app.api.auth`; refresh-token rotation works by writing old token JTIs into `refresh_token_blocklist`, so refresh and logout changes must keep the JWT service and blocklist table behavior aligned.

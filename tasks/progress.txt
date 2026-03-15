@@ -3,6 +3,7 @@
 - Python dependencies and backend tooling are managed with `uv` from `backend/pyproject.toml` and `backend/uv.lock`.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
+- Refresh-token rotation and logout revocation are implemented by storing revoked refresh-token JTIs in `refresh_token_blocklist`.
 
 ## Progress Log
 ## 2026-03-15 15:11 EDT - US-001
@@ -55,4 +56,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Parallel bootstrap attempts can race on an empty database, so integration tests for bootstrap behavior should run sequentially unless a lock is introduced later.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The current bootstrap restriction is enforced at the service layer by checking whether any user row already exists.
+---
+## 2026-03-15 15:33 EDT - US-004
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added `/api/auth/login`, `/api/auth/refresh`, and `/api/auth/logout` endpoints backed by JWT access and refresh tokens.
+- Implemented refresh-token rotation and revocation using the existing `refresh_token_blocklist` table so reused or logged-out refresh tokens are rejected.
+- Added auth API tests that verify login, rotated refresh tokens, and logout revocation against a temporary SQLite database.
+- Extended backend config and documentation for JWT secrets and token lifetimes, and kept the container build green after the auth changes.
+- Files changed: `AGENTS.md`, `README.md`, `.env.example`, `backend/pyproject.toml`, `backend/uv.lock`, `backend/app/config.py`, `backend/app/main.py`, `backend/app/db/session.py`, `backend/app/api/*`, `backend/app/security/tokens.py`, `backend/app/services/auth.py`, `backend/tests/test_auth_api.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Auth route handlers stay thin and delegate token issuance, rotation, and revocation rules to `app.services.auth`.
+  - Runtime settings that tests need to override should be accessed through `get_settings()` and paired with `configure_session_factory(...)` when the database URL changes.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - FastAPI `204` routes must return an explicit empty `Response`; otherwise route registration fails during import.
+  - Refresh-token revocation depends on storing the old token JTI before issuing or accepting future refreshes.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The auth API tests already create a temporary bootstrapped admin and exercise the full login-refresh-logout sequence end to end.
 ---
