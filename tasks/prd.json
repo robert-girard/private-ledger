@@ -208,7 +208,7 @@
         "Verify in browser using playwright-cli skill"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Transaction Manager is the first broad post-import review UI after the Import Wizard page and transaction backend exist."
     },
     {

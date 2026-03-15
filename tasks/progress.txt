@@ -1,6 +1,7 @@
 ## Codebase Patterns
 - FastAPI serves the compiled SPA from `frontend/dist`, so deployment changes need the frontend build output path and backend static mount to stay in sync.
 - The Vite dev server proxies `/api` to `http://127.0.0.1:8000`, which keeps frontend API calls same-origin during local SPA development.
+- Authenticated frontend CSV exports should fetch the file with the bearer token and trigger a client-side download, because plain anchor links will miss the API auth header.
 - Python dependencies and backend tooling are managed with `uv` from `backend/pyproject.toml` and `backend/uv.lock`.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
@@ -221,5 +222,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Static transaction routes like `/api/transactions/export` must be registered before `/api/transactions/{transaction_id}` or FastAPI will route them as transaction IDs.
   - Transaction list ordering is newest-first, so tests and UI assumptions should not depend on import insertion order.
   - Useful context (e.g., "the evaluation panel is in component X")
-  - The transaction backend regression coverage lives in `backend/tests/test_transaction_api.py` and is the first place to extend when adding more filter dimensions or bulk review actions.
+- The transaction backend regression coverage lives in `backend/tests/test_transaction_api.py` and is the first place to extend when adding more filter dimensions or bulk review actions.
+---
+## 2026-03-15 18:01 EDT - US-013
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added a Transaction Manager view to the authenticated SPA shell with category filtering, uncategorized count and one-click filter, inline category saves, row selection for bulk actions, CSV export, and simple paging controls.
+- Kept the UI on the existing session model from the Import Wizard story so the transaction page reuses the same bearer token flow and protected API client.
+- Verified the page in the browser using `playwright-cli` against a temporary local backend on `http://127.0.0.1:8010`: signed in, opened Transaction Manager, confirmed uncategorized filtering reduced the table to one row, applied a bulk category update to the selected row, and downloaded `transactions.csv` through the authenticated export button. Screenshot: `/tmp/private-ledger-us013-transaction-manager.png`.
+- Files changed: `AGENTS.md`, `frontend/src/App.tsx`, `frontend/src/styles.css`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - The authenticated shell can now host multiple tool pages behind one lightweight nav without introducing a full router yet, which is enough for the current staged MVP stories.
+  - Transaction Manager reuses the backend filter contract directly, so later UI filter expansion should stay aligned with `/api/transactions` and `/api/transactions/export` instead of inventing frontend-only query state.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Browser verification must hit a backend process started after the latest API changes; stale local processes can make the UI look wrong even when the current code is correct.
+  - Authenticated CSV export from the SPA cannot use a plain `<a>` link because the bearer token lives in client state rather than cookies.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The Transaction Manager currently lives alongside the Import Wizard in `frontend/src/App.tsx`, so the next UI stories can reuse the same auth shell and section-card structure before the app graduates to real routing.
 ---

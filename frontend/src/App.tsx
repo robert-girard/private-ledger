@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 
-type AppView = "import";
+type AppView = "import" | "transactions";
 
 type UserSummary = {
   email: string;
@@ -33,6 +33,16 @@ type PreviewResponse = {
   preview_rows: PreviewRow[];
 };
 
+type TransactionRow = {
+  id: string;
+  posted_on: string;
+  description: string;
+  amount: string;
+  category: string | null;
+  merchant_name: string | null;
+  import_source: string | null;
+};
+
 type ApiError = {
   detail?: string | { message?: string; errors?: string[] };
 };
@@ -42,6 +52,11 @@ const views: Array<{ id: AppView; title: string; summary: string }> = [
     id: "import",
     title: "Import Wizard",
     summary: "Upload CSVs, inspect detected bank profiles, fix unsupported columns, and preview before commit.",
+  },
+  {
+    id: "transactions",
+    title: "Transaction Manager",
+    summary: "Filter, repair, bulk-edit, and export the current ledger view.",
   },
 ];
 
@@ -383,10 +398,281 @@ function ImportWizard({
   );
 }
 
+function TransactionManager({ token }: { token: string }) {
+  const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [inlineCategory, setInlineCategory] = useState<Record<string, string>>({});
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  async function loadTransactions() {
+    setLoading(true);
+    setError("");
+    const params = new URLSearchParams();
+    if (categoryFilter) {
+      params.set("category", categoryFilter);
+    }
+    if (uncategorizedOnly) {
+      params.set("uncategorized_only", "true");
+    }
+
+    try {
+      const response = await apiRequest<TransactionRow[]>(
+        `/api/transactions${params.toString() ? `?${params.toString()}` : ""}`,
+        {},
+        token,
+      );
+      setTransactions(response);
+      setPage(1);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadTransactions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, uncategorizedOnly]);
+
+  async function updateCategory(transactionId: string) {
+    try {
+      await apiRequest(
+        `/api/transactions/${transactionId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ category: inlineCategory[transactionId] ?? "" }),
+        },
+        token,
+      );
+      setMessage("Transaction category updated.");
+      await loadTransactions();
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  async function applyBulkCategory() {
+    if (!selectedIds.length) {
+      setError("Select at least one transaction.");
+      return;
+    }
+    try {
+      await apiRequest(
+        "/api/transactions/bulk-category",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transaction_ids: selectedIds, category: bulkCategory }),
+        },
+        token,
+      );
+      setMessage(`Updated ${selectedIds.length} transaction categories.`);
+      setSelectedIds([]);
+      await loadTransactions();
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  async function bulkDelete() {
+    if (!selectedIds.length) {
+      setError("Select at least one transaction.");
+      return;
+    }
+    try {
+      await apiRequest(
+        "/api/transactions/bulk-delete",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transaction_ids: selectedIds }),
+        },
+        token,
+      );
+      setMessage(`Deleted ${selectedIds.length} transaction rows.`);
+      setSelectedIds([]);
+      await loadTransactions();
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  async function exportTransactions() {
+    setError("");
+    try {
+      const params = new URLSearchParams();
+      if (categoryFilter) {
+        params.set("category", categoryFilter);
+      }
+      if (uncategorizedOnly) {
+        params.set("uncategorized_only", "true");
+      }
+
+      const response = await fetch(
+        `/api/transactions/export${params.toString() ? `?${params.toString()}` : ""}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as ApiError;
+        throw new Error(errorMessage(payload));
+      }
+
+      const content = await response.text();
+      const blob = new Blob([content], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "transactions.csv";
+      link.click();
+      window.URL.revokeObjectURL(url);
+      setMessage("Exported the current filtered transaction view.");
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  const uncategorizedCount = transactions.filter((transaction) => !transaction.category).length;
+  const totalPages = Math.max(1, Math.ceil(transactions.length / pageSize));
+  const pagedTransactions = transactions.slice((page - 1) * pageSize, page * pageSize);
+  return (
+    <section className="workspace-card">
+      <div className="section-heading">
+        <p className="eyebrow">Transactions</p>
+        <h2>Transaction Manager</h2>
+        <p>Filter and repair transactions, apply bulk actions, and export the exact ledger slice you are reviewing.</p>
+      </div>
+
+      <div className="filter-grid">
+        <label className="field">
+          <span>Category filter</span>
+          <input value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} placeholder="Dining" />
+        </label>
+        <label className="toggle">
+          <input
+            checked={uncategorizedOnly}
+            onChange={(event) => setUncategorizedOnly(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Uncategorized only ({uncategorizedCount})</span>
+        </label>
+        <div className="actions-row">
+          <button className="primary-button" type="button" onClick={() => void loadTransactions()} disabled={loading}>
+            {loading ? "Refreshing..." : "Apply Filters"}
+          </button>
+          <button className="secondary-link" type="button" onClick={() => void exportTransactions()}>
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      <div className="bulk-toolbar">
+        <label className="field">
+          <span>Bulk category</span>
+          <input value={bulkCategory} onChange={(event) => setBulkCategory(event.target.value)} placeholder="Reviewed" />
+        </label>
+        <button className="secondary-button" type="button" onClick={applyBulkCategory}>
+          Apply to selected
+        </button>
+        <button className="ghost-button" type="button" onClick={bulkDelete}>
+          Delete selected
+        </button>
+      </div>
+
+      {message ? <p className="notice success">{message}</p> : null}
+      {error ? <p className="notice error">{error}</p> : null}
+
+      <div className="preview-table-card transaction-table-card">
+        <div className="table-header">
+          <h3>Ledger rows</h3>
+          <span>
+            Page {page} of {totalPages}
+          </span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Select</th>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Merchant</th>
+              <th>Amount</th>
+              <th>Category</th>
+              <th>Import</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pagedTransactions.map((transaction) => (
+              <tr key={transaction.id}>
+                <td>
+                  <input
+                    checked={selectedIds.includes(transaction.id)}
+                    onChange={(event) =>
+                      setSelectedIds((current) =>
+                        event.target.checked
+                          ? [...current, transaction.id]
+                          : current.filter((id) => id !== transaction.id),
+                      )
+                    }
+                    type="checkbox"
+                  />
+                </td>
+                <td>{transaction.posted_on}</td>
+                <td>{transaction.description}</td>
+                <td>{transaction.merchant_name ?? "Unknown"}</td>
+                <td>{transaction.amount}</td>
+                <td>
+                  <div className="inline-edit">
+                    <input
+                      value={inlineCategory[transaction.id] ?? transaction.category ?? ""}
+                      onChange={(event) =>
+                        setInlineCategory((current) => ({ ...current, [transaction.id]: event.target.value }))
+                      }
+                    />
+                    <button className="ghost-button" type="button" onClick={() => void updateCategory(transaction.id)}>
+                      Save
+                    </button>
+                  </div>
+                </td>
+                <td>{transaction.import_source ?? "Manual"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="pagination-row">
+          <button className="ghost-button" type="button" onClick={() => setPage((current) => Math.max(1, current - 1))}>
+            Previous
+          </button>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [token, setToken] = useState<string>(() => window.localStorage.getItem("private-ledger-token") ?? "");
   const [user, setUser] = useState<UserSummary | null>(null);
-  const [view] = useState<AppView>("import");
+  const [view, setView] = useState<AppView>("import");
   const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("secret-pass");
   const [loginError, setLoginError] = useState("");
@@ -487,7 +773,12 @@ export function App() {
             <p className="eyebrow">Workspace</p>
             <nav>
               {views.map((item) => (
-                <button key={item.id} type="button" className={item.id === view ? "nav-item active" : "nav-item"}>
+                <button
+                  key={item.id}
+                  type="button"
+                  className={item.id === view ? "nav-item active" : "nav-item"}
+                  onClick={() => setView(item.id)}
+                >
                   <strong>{item.title}</strong>
                   <span>{item.summary}</span>
                 </button>
@@ -496,7 +787,8 @@ export function App() {
           </aside>
 
           <div className="workspace-content">
-            <ImportWizard token={token} />
+            {view === "import" ? <ImportWizard token={token} /> : null}
+            {view === "transactions" ? <TransactionManager token={token} /> : null}
           </div>
         </div>
       )}
