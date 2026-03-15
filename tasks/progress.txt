@@ -123,3 +123,18 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Useful context (e.g., "the evaluation panel is in component X")
   - The human-readable PRD already treats import as an early user workflow, so the split plan should be checked against it whenever the milestone sequence feels off.
 ---
+## 2026-03-15 16:22 EDT - Planning
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added a dedicated Import Wizard frontend story to `tasks/prd.json` so import now has an explicit UI milestone in the split plan.
+- Shifted downstream story IDs and priorities so Transaction Manager, Merchant Manager, and later frontend work follow the new Import Wizard story in a usable order.
+- Updated the planning note to reflect that the split plan now contains the missing import UI story.
+- Files changed: `tasks/prd.json`, `tasks/prd-private-ledger.md`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - When a workflow exists in the human-readable PRD but not in the split plan, add the missing story explicitly instead of only reordering surrounding work.
+  - The import workflow now spans backend stories `US-006` to `US-008` and frontend story `US-010`.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Adding a new story in the middle of `prd.json` requires shifting later story IDs and priorities, so future references should use the updated numbering.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - Merchant Manager remains downstream because it depends on imported and committed transaction data to populate merchant records.
+---

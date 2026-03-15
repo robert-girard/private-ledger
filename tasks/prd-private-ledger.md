@@ -18,7 +18,7 @@ The product is intended to run as a Docker Compose deployment with a FastAPI bac
 
 ## User Stories
 
-Note: the current `tasks/prd.json` split is backend-heavy and does not yet include a dedicated frontend Import page story, even though import is the first meaningful end-user workflow in the human-readable PRD. Merchant Manager should not be treated as the first useful UI milestone until an import UI exists and committed transactions can populate merchants.
+Note: the split `tasks/prd.json` plan now includes a dedicated Import Wizard frontend story so the implementation order matches the human-readable PRD. Merchant Manager should still come after import preview, transaction commit, and merchant backend actions so committed data exists before merchant review begins.
 
 ### US-001: Set up and authenticate into a self-hosted instance
 **Description:** As a technical household operator, I want to start the stack with Docker Compose and sign in securely so that I can administer a local-only finance app.

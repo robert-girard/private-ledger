@@ -147,6 +147,22 @@
     },
     {
       "id": "US-010",
+      "title": "Build Import Wizard page",
+      "description": "As a user, I want an Import Wizard interface so that I can upload bank CSVs, review detected mappings, fix unsupported columns, and preview rows before committing them.",
+      "acceptanceCriteria": [
+        "Render an Import page that accepts CSV uploads and calls the import preview API",
+        "Show detected bank profile details when a supported format is recognized",
+        "Show manual mapping controls when the backend returns unresolved columns",
+        "Display preview rows before commit and surface validation errors inline",
+        "Typecheck passes",
+        "Verify in browser using playwright-cli skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "This is the missing frontend counterpart to US-006 through US-008 and should be treated as the first meaningful import UI milestone."
+    },
+    {
+      "id": "US-011",
       "title": "Build Merchant Manager page",
       "description": "As a user, I want a Merchant Manager interface so that I can review merchants, assign categories, and clean up aliases.",
       "acceptanceCriteria": [
@@ -157,12 +173,12 @@
         "Typecheck passes",
         "Verify in browser using playwright-cli skill"
       ],
-      "priority": 13,
+      "priority": 14,
       "passes": false,
-      "notes": "This UI only becomes useful after import preview, transaction commit, and merchant backend actions exist. The split plan still needs a dedicated Import page frontend story before this becomes a meaningful first-use UI milestone."
+      "notes": "This UI only becomes useful after import preview, transaction commit, merchant backend actions, and the Import Wizard page exist."
     },
     {
-      "id": "US-011",
+      "id": "US-012",
       "title": "Add transaction query and export backend",
       "description": "As a user, I want transaction APIs with filters and export support so that I can audit and analyze ledger data.",
       "acceptanceCriteria": [
@@ -174,12 +190,12 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 10,
+      "priority": 11,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-012",
+      "id": "US-013",
       "title": "Build Transaction Manager page",
       "description": "As a user, I want a searchable transaction manager so that I can review, fix, and export my ledger.",
       "acceptanceCriteria": [
@@ -191,12 +207,12 @@
         "Typecheck passes",
         "Verify in browser using playwright-cli skill"
       ],
-      "priority": 11,
+      "priority": 12,
       "passes": false,
-      "notes": "Transaction Manager is currently the first frontend story with a meaningful post-import review workflow in the split plan."
+      "notes": "Transaction Manager is the first broad post-import review UI after the Import Wizard page and transaction backend exist."
     },
     {
-      "id": "US-013",
+      "id": "US-014",
       "title": "Implement recurring detection and subscription persistence",
       "description": "As a user, I want recurring charges detected from transaction history so that fixed spending can feed the budgeting flow.",
       "acceptanceCriteria": [
@@ -207,12 +223,12 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 12,
+      "priority": 13,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-014",
+      "id": "US-015",
       "title": "Build Subscriptions page",
       "description": "As a user, I want a subscriptions page so that I can review, edit, and manage recurring spending entries.",
       "acceptanceCriteria": [
@@ -223,12 +239,12 @@
         "Typecheck passes",
         "Verify in browser using playwright-cli skill"
       ],
-      "priority": 14,
+      "priority": 15,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-015",
+      "id": "US-016",
       "title": "Implement baseline budget generation and activation backend",
       "description": "As a user, I want a baseline budget generated from history so that I can start budgeting immediately after importing transactions.",
       "acceptanceCriteria": [
@@ -239,12 +255,12 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 15,
+      "priority": 16,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-016",
+      "id": "US-017",
       "title": "Build Budget Creator flow",
       "description": "As a user, I want a guided budget creation flow so that I can review and activate generated budget recommendations.",
       "acceptanceCriteria": [
@@ -255,12 +271,12 @@
         "Typecheck passes",
         "Verify in browser using playwright-cli skill"
       ],
-      "priority": 16,
+      "priority": 17,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-017",
+      "id": "US-018",
       "title": "Add dashboard aggregation endpoints",
       "description": "As a developer, I want dashboard aggregates computed server-side so that the UI can render budget health and recent activity efficiently.",
       "acceptanceCriteria": [
@@ -271,12 +287,12 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 17,
+      "priority": 18,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-018",
+      "id": "US-019",
       "title": "Build Dashboard page",
       "description": "As a user, I want a dashboard overview so that I can quickly understand my current budget state and pending cleanup work.",
       "acceptanceCriteria": [
@@ -287,12 +303,12 @@
         "Typecheck passes",
         "Verify in browser using playwright-cli skill"
       ],
-      "priority": 18,
+      "priority": 19,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-019",
+      "id": "US-020",
       "title": "Add reporting aggregation endpoints",
       "description": "As a developer, I want reporting endpoints for charts and exports so that the reports page can analyze spending over time.",
       "acceptanceCriteria": [
@@ -303,12 +319,12 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 19,
+      "priority": 20,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-020",
+      "id": "US-021",
       "title": "Build Reports page",
       "description": "As a user, I want interactive reports so that I can understand spending trends, category distribution, and top merchants.",
       "acceptanceCriteria": [
@@ -319,12 +335,12 @@
         "Typecheck passes",
         "Verify in browser using playwright-cli skill"
       ],
-      "priority": 20,
+      "priority": 21,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-021",
+      "id": "US-022",
       "title": "Add security hardening for auth, uploads, and response headers",
       "description": "As an operator, I want core security controls enforced so that the local deployment is safer by default.",
       "acceptanceCriteria": [
@@ -335,12 +351,12 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 21,
+      "priority": 22,
       "passes": false,
       "notes": ""
     },
     {
-      "id": "US-022",
+      "id": "US-023",
       "title": "Document deployment, maintenance, and smoke-test workflow",
       "description": "As a technical operator, I want clear operating documentation so that I can deploy, update, and validate the stack reliably.",
       "acceptanceCriteria": [
@@ -351,7 +367,7 @@
         "Typecheck passes",
         "Tests pass"
       ],
-      "priority": 22,
+      "priority": 23,
       "passes": false,
       "notes": ""
     }
