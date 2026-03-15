@@ -14,6 +14,7 @@
 - Merchant detail panels can reuse `/api/transactions?merchant_id=...` for recent history and filter `/api/merchant-aliases` client-side by `merchant_id`; no extra backend detail endpoint is needed for the current review UI.
 - Recurring subscription detection groups negative transactions by merchant or normalized description in `app.services.subscriptions`; `/api/subscriptions/detect` upserts the detected rows so reruns stay idempotent.
 - Subscription UI can use the existing list/detail/detect endpoints directly; detection is an explicit page action and detail views already include recent matching charges.
+- Budget generation should create or replace inactive `budgets` rows for a target month first, then activate that month in a separate step so review UIs can edit persisted recommendations before they become the live budget.
 - Transaction review and CSV export should share one filter contract so the exported dataset matches the current filtered ledger view exactly.
 
 ## Progress Log
@@ -290,4 +291,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Playwright field targeting can drift when multiple textbox labels repeat across the page, so snapshot refs are more reliable than generic label matching once the detail form is open.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The Subscriptions page now sits beside Import, Transactions, and Merchants in `frontend/src/App.tsx`; later budget flows can reuse its detail panel structure and merchant-link form controls.
+---
+## 2026-03-15 19:00 EDT - US-016
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added backend budget generation, row update, and month activation endpoints so a target month can be generated from active subscriptions and historical category averages, edited, and then activated separately.
+- Implemented budget generation in a dedicated service that aggregates fixed subscription categories, computes variable category averages from prior spending with limited-history fallback, excludes transfer rows, and refreshes `spent_amount` from in-month transactions.
+- Added backend tests covering fixed and variable recommendations, limited-history averaging, transfer exclusion, persisted inactive budget rows, and month activation toggling.
+- Files changed: `AGENTS.md`, `backend/app/api/ledger.py`, `backend/app/services/budgets.py`, `backend/tests/test_budget_api.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Budget generation now lives in `app.services.budgets`, which is the shared place for backend generation, spend refresh, and future dashboard consumption.
+  - The budget workflow is intentionally two-step: generate persisted inactive rows first, then activate the chosen month later after review edits.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Variable-budget averages should ignore transfer merchants and active-subscription transactions or fixed recurring spending gets double-counted into variable category limits.
+  - `spent_amount` needs a refresh pass after generation because the recommendation rows are stored separately from the transaction history they summarize.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The new backend contract for later UI work is `POST /api/budgets/generate`, `PATCH /api/budgets/{id}`, and `POST /api/budgets/activate`.
 ---

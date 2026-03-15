@@ -30,6 +30,7 @@ from app.dependencies.auth import get_current_user
 from app.importing.parser import ManualMappingRequirement, MappingValidationError, ProfileParseResult
 from app.services.imports import commit_import as create_import_commit
 from app.services.imports import create_import_preview
+from app.services.budgets import activate_budget_month, generate_budget_plan, refresh_budget_spent_amounts
 from app.services.merchants import (
     create_alias_rule,
     list_merchant_summaries,
@@ -173,6 +174,35 @@ class BudgetResponse(BaseModel):
     planned_amount: Decimal
     spent_amount: Decimal
     is_active: bool
+
+
+class BudgetRecommendationResponse(BudgetResponse):
+    source_type: str
+    subscription_names: list[str] = Field(default_factory=list)
+    months_used: int = 0
+
+
+class BudgetGenerateRequest(BaseModel):
+    month_start: date
+
+
+class BudgetGenerateResponse(BaseModel):
+    month_start: date
+    recommendations: list[BudgetRecommendationResponse]
+
+
+class BudgetActivateRequest(BaseModel):
+    month_start: date
+
+
+class BudgetActivationResponse(BaseModel):
+    month_start: date
+    activated_count: int
+    budgets: list[BudgetResponse]
+
+
+class BudgetUpdateRequest(BaseModel):
+    planned_amount: Decimal
 
 
 class MerchantResponse(BaseModel):
@@ -592,6 +622,10 @@ def commit_import_rows(
     )
 
 
+def _budget_response(budget: Budget) -> BudgetResponse:
+    return BudgetResponse.model_validate(budget, from_attributes=True)
+
+
 @router.post("/subscriptions/detect", response_model=SubscriptionDetectResponse)
 def detect_subscriptions(
     user: User = Depends(get_current_user),
@@ -706,13 +740,59 @@ def get_subscription(
     )
 
 
+@router.post("/budgets/generate", response_model=BudgetGenerateResponse)
+def generate_budgets(
+    payload: BudgetGenerateRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> BudgetGenerateResponse:
+    result = generate_budget_plan(session, user=user, month_start=payload.month_start)
+    refreshed_budgets = refresh_budget_spent_amounts(session, user=user, month_start=result.month_start)
+    spent_by_id = {budget.id: budget.spent_amount for budget in refreshed_budgets}
+    return BudgetGenerateResponse(
+        month_start=result.month_start,
+        recommendations=[
+            BudgetRecommendationResponse(
+                id=recommendation.budget.id,
+                user_id=recommendation.budget.user_id,
+                month_start=recommendation.budget.month_start,
+                category=recommendation.budget.category,
+                planned_amount=recommendation.budget.planned_amount,
+                spent_amount=spent_by_id.get(recommendation.budget.id, recommendation.budget.spent_amount),
+                is_active=recommendation.budget.is_active,
+                source_type=recommendation.source_type,
+                subscription_names=recommendation.subscription_names,
+                months_used=recommendation.months_used,
+            )
+            for recommendation in result.recommendations
+        ],
+    )
+
+
+@router.post("/budgets/activate", response_model=BudgetActivationResponse)
+def activate_budgets(
+    payload: BudgetActivateRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> BudgetActivationResponse:
+    try:
+        budgets = activate_budget_month(session, user=user, month_start=payload.month_start)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return BudgetActivationResponse(
+        month_start=payload.month_start.replace(day=1),
+        activated_count=len(budgets),
+        budgets=[_budget_response(budget) for budget in budgets],
+    )
+
+
 @router.get("/budgets", response_model=list[BudgetResponse])
 def list_budgets(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> list[BudgetResponse]:
     items = session.scalars(select(Budget).where(Budget.user_id == user.id)).all()
-    return [BudgetResponse.model_validate(item, from_attributes=True) for item in items]
+    return [_budget_response(item) for item in items]
 
 
 @router.get("/budgets/{budget_id}", response_model=BudgetResponse)
@@ -722,7 +802,22 @@ def get_budget(
     session: Session = Depends(get_db_session),
 ) -> BudgetResponse:
     item = _user_scoped_resource(session, Budget, budget_id, user.id)
-    return BudgetResponse.model_validate(item, from_attributes=True)
+    return _budget_response(cast(Budget, item))
+
+
+@router.patch("/budgets/{budget_id}", response_model=BudgetResponse)
+def update_budget(
+    budget_id: str,
+    payload: BudgetUpdateRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> BudgetResponse:
+    item = cast(Budget, _user_scoped_resource(session, Budget, budget_id, user.id))
+    item.planned_amount = payload.planned_amount
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return _budget_response(item)
 
 
 @router.get("/merchants", response_model=list[MerchantResponse])
