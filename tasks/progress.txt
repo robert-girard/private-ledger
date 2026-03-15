@@ -8,6 +8,7 @@
 - CSV import profile detection lives in `app.importing.parser`; unsupported headers should return a manual-mapping requirement structure rather than failing implicitly.
 - Import preview uploads are staged under `IMPORT_STORAGE_DIR/<user-id>/...` and persisted as pending `imports` rows with `stored_path` set for later commit flows.
 - Import dedupe is keyed from `user_id`, `posted_on`, normalized `amount`, and normalized merchant text; commit flows should reuse that same hash logic instead of inventing per-endpoint duplicate checks.
+- Merchant registry endpoints are instance-scoped, but bulk recategorization logic must only mutate the authenticated user’s transactions when replaying merchant rules.
 
 ## Progress Log
 ## 2026-03-15 15:11 EDT - US-001
@@ -170,5 +171,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Manual-mapped previews cannot be committed unless the same mapping is provided again, because the baseline schema does not yet persist mapping metadata.
   - Route helpers that return unions are convenient for shared list/detail endpoints, but commit-style actions need concrete model fetches to keep pyright satisfied.
   - Useful context (e.g., "the evaluation panel is in component X")
-  - The new commit tests live beside the preview tests in `backend/tests/test_import_preview_api.py`, so future import workflow coverage can extend that file before adding a separate suite.
+- The new commit tests live beside the preview tests in `backend/tests/test_import_preview_api.py`, so future import workflow coverage can extend that file before adding a separate suite.
+---
+## 2026-03-15 17:31 EDT - US-009
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added merchant management backend actions for list, update, alias creation and deletion, bulk category assignment, merchant merge, and historical re-categorization.
+- Enriched merchant list responses with transaction counts and last-seen dates so later frontend work can render review-oriented merchant tables without extra API round-trips.
+- Centralized merchant normalization, alias handling, merge behavior, and user-scoped historical recategorization in a dedicated merchant service with API coverage for the full management flow.
+- Files changed: `AGENTS.md`, `backend/app/api/ledger.py`, `backend/app/services/imports.py`, `backend/app/services/merchants.py`, `backend/tests/test_merchant_management_api.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Merchant normalization now lives in `app.services.merchants`, and import dedupe reuses that same normalization logic to keep merchant and import flows aligned.
+  - Merchant list responses already include `transaction_count` and `last_seen`, so Merchant Manager UI work can fetch one list endpoint before opening any detail panel.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Merchant records are global, but re-categorization must stay user-scoped or one household user can rewrite another user’s private transaction history.
+  - Merge flows need to carry aliases forward before deleting the source merchant, otherwise normalized historical matches are lost.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The merchant action regression coverage is in `backend/tests/test_merchant_management_api.py` and currently exercises the whole list-update-alias-recategorize-bulk-merge flow in one place.
 ---

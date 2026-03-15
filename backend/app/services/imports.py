@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +21,7 @@ from app.importing.parser import (
     parse_csv_text,
     parse_csv_with_mapping,
 )
+from app.services.merchants import normalize_merchant_name
 
 
 @dataclass(frozen=True)
@@ -82,12 +82,6 @@ def _load_staged_csv(import_record: Import, settings: Settings) -> str:
         raise ValueError("The staged import file is outside the configured import storage directory.")
 
     return stored_path.read_text(encoding="utf-8")
-
-
-def _normalized_merchant_name(value: str) -> str:
-    lowered = value.strip().lower()
-    alphanumeric = re.sub(r"[^a-z0-9]+", " ", lowered)
-    return " ".join(alphanumeric.split())
 
 
 def _dedupe_hash(*, user_id: str, posted_on: str, amount: str, normalized_merchant: str) -> str:
@@ -191,7 +185,7 @@ def commit_import(
 
     existing_merchants = session.scalars(select(Merchant)).all()
     merchant_by_normalized_name = {
-        _normalized_merchant_name(merchant.raw_name): merchant for merchant in existing_merchants
+        normalize_merchant_name(merchant.raw_name): merchant for merchant in existing_merchants
     }
 
     dedupe_hashes = [
@@ -199,7 +193,7 @@ def commit_import(
             user_id=user.id,
             posted_on=row.posted_on,
             amount=f"{row.amount:.2f}",
-            normalized_merchant=_normalized_merchant_name(row.description),
+            normalized_merchant=normalize_merchant_name(row.description),
         )
         for row in parse_result.rows
     ]
@@ -212,7 +206,7 @@ def commit_import(
     seen_hashes = set(existing_hashes)
 
     for row in parse_result.rows:
-        normalized_merchant = _normalized_merchant_name(row.description)
+        normalized_merchant = normalize_merchant_name(row.description)
         dedupe_hash = _dedupe_hash(
             user_id=user.id,
             posted_on=row.posted_on,

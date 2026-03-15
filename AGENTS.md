@@ -33,3 +33,4 @@ This file defines the root-level guidance for agents working in this repository.
 - CSV parser profiles live under `app.importing`; unknown headers should return a manual-mapping requirement object instead of raising or silently guessing.
 - Import preview uploads are staged under `IMPORT_STORAGE_DIR/<user-id>/...` and recorded as `imports` rows with temp `stored_path` values, so later import-commit work should reuse that staged file instead of re-uploading.
 - Import commits should reuse the staged CSV on the `imports` row, normalize merchant names before dedupe, and build transaction hashes from `user_id`, `posted_on`, `amount`, and normalized merchant text.
+- Merchant registry actions should keep merchant records instance-scoped, but any historical recategorization or transaction reassignment must still be filtered to the authenticated user’s records.
