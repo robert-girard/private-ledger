@@ -144,9 +144,10 @@ def test_commit_import_inserts_transactions_and_creates_merchants(auth_client: T
 
     assert transactions_response.status_code == 200
     transactions = transactions_response.json()
-    assert [item["description"] for item in transactions] == ["COFFEE SHOP", "PAYROLL"]
-    assert transactions[0]["normalized_description"] == "coffee shop"
-    assert transactions[0]["amount"] == "-5.45"
+    assert [item["description"] for item in transactions] == ["PAYROLL", "COFFEE SHOP"]
+    coffee_transaction = next(item for item in transactions if item["description"] == "COFFEE SHOP")
+    assert coffee_transaction["normalized_description"] == "coffee shop"
+    assert coffee_transaction["amount"] == "-5.45"
 
     assert merchants_response.status_code == 200
     assert [item["raw_name"] for item in merchants_response.json()] == ["COFFEE SHOP", "PAYROLL"]

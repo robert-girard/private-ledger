@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import csv
 import json
+from io import StringIO
 from datetime import date, datetime
 from decimal import Decimal
-from typing import cast
+from typing import Sequence, cast
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -49,6 +52,8 @@ class TransactionResponse(BaseModel):
     category: str | None
     notes: str | None
     dedupe_hash: str
+    merchant_name: str | None = None
+    import_source: str | None = None
 
 
 class ImportResponse(BaseModel):
@@ -172,6 +177,58 @@ class MerchantRecategorizeResponse(BaseModel):
     updated_count: int
 
 
+class TransactionUpdateRequest(BaseModel):
+    category: str | None
+
+
+class TransactionBulkCategoryRequest(BaseModel):
+    transaction_ids: list[str]
+    category: str | None
+
+
+class TransactionBulkDeleteRequest(BaseModel):
+    transaction_ids: list[str]
+
+
+class TransactionBulkResult(BaseModel):
+    updated_count: int = 0
+    deleted_count: int = 0
+
+
+def _transaction_query_for_user(user_id: str):
+    return (
+        select(Transaction, Merchant.display_name, Import.source_filename)
+        .outerjoin(Merchant, Merchant.id == Transaction.merchant_id)
+        .outerjoin(Import, Import.id == Transaction.import_id)
+        .where(Transaction.user_id == user_id)
+        .order_by(Transaction.posted_on.desc(), Transaction.created_at.desc())
+    )
+
+
+def _transaction_response_rows(
+    rows: Sequence[tuple[Transaction, str | None, str | None]],
+) -> list[TransactionResponse]:
+    return [
+        TransactionResponse(
+            id=transaction.id,
+            user_id=transaction.user_id,
+            import_id=transaction.import_id,
+            merchant_id=transaction.merchant_id,
+            posted_on=transaction.posted_on,
+            description=transaction.description,
+            normalized_description=transaction.normalized_description,
+            amount=transaction.amount,
+            currency=transaction.currency,
+            category=transaction.category,
+            notes=transaction.notes,
+            dedupe_hash=transaction.dedupe_hash,
+            merchant_name=merchant_name,
+            import_source=import_source,
+        )
+        for transaction, merchant_name, import_source in rows
+    ]
+
+
 def _user_scoped_resource(
     session: Session,
     model: type[Transaction] | type[Import] | type[Subscription] | type[Budget],
@@ -193,11 +250,136 @@ def current_user(user: User = Depends(get_current_user)) -> CurrentUserResponse:
 
 @router.get("/transactions", response_model=list[TransactionResponse])
 def list_transactions(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    category: str | None = None,
+    merchant_id: str | None = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
+    import_id: str | None = None,
+    import_source: str | None = None,
+    categorized: bool | None = None,
+    uncategorized_only: bool = False,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> list[TransactionResponse]:
-    items = session.scalars(select(Transaction).where(Transaction.user_id == user.id)).all()
-    return [TransactionResponse.model_validate(item, from_attributes=True) for item in items]
+    query = _transaction_query_for_user(user.id)
+
+    if start_date is not None:
+        query = query.where(Transaction.posted_on >= start_date)
+    if end_date is not None:
+        query = query.where(Transaction.posted_on <= end_date)
+    if category is not None:
+        query = query.where(Transaction.category == category)
+    if merchant_id is not None:
+        query = query.where(Transaction.merchant_id == merchant_id)
+    if amount_min is not None:
+        query = query.where(Transaction.amount >= amount_min)
+    if amount_max is not None:
+        query = query.where(Transaction.amount <= amount_max)
+    if import_id is not None:
+        query = query.where(Transaction.import_id == import_id)
+    if import_source is not None:
+        query = query.where(Import.source_filename == import_source)
+    if uncategorized_only:
+        query = query.where(Transaction.category.is_(None))
+    elif categorized is True:
+        query = query.where(Transaction.category.is_not(None))
+    elif categorized is False:
+        query = query.where(Transaction.category.is_(None))
+
+    raw_rows = session.execute(query).all()
+    rows = [(row[0], row[1], row[2]) for row in raw_rows]
+    return _transaction_response_rows(rows)
+
+
+@router.patch("/transactions/{transaction_id}", response_model=TransactionResponse)
+def update_transaction(
+    transaction_id: str,
+    payload: TransactionUpdateRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> TransactionResponse:
+    transaction = cast(Transaction, _user_scoped_resource(session, Transaction, transaction_id, user.id))
+    transaction.category = payload.category.strip() if payload.category is not None and payload.category.strip() else None
+    session.add(transaction)
+    session.commit()
+    session.refresh(transaction)
+    return get_transaction(transaction_id, user, session)
+
+
+@router.post("/transactions/bulk-category", response_model=TransactionBulkResult)
+def bulk_update_transactions(
+    payload: TransactionBulkCategoryRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> TransactionBulkResult:
+    transactions = session.scalars(
+        select(Transaction).where(Transaction.user_id == user.id, Transaction.id.in_(payload.transaction_ids))
+    ).all()
+    for transaction in transactions:
+        transaction.category = payload.category.strip() if payload.category is not None and payload.category.strip() else None
+    session.commit()
+    return TransactionBulkResult(updated_count=len(transactions))
+
+
+@router.post("/transactions/bulk-delete", response_model=TransactionBulkResult)
+def bulk_delete_transactions(
+    payload: TransactionBulkDeleteRequest,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> TransactionBulkResult:
+    transactions = session.scalars(
+        select(Transaction).where(Transaction.user_id == user.id, Transaction.id.in_(payload.transaction_ids))
+    ).all()
+    deleted_count = len(transactions)
+    for transaction in transactions:
+        session.delete(transaction)
+    session.commit()
+    return TransactionBulkResult(deleted_count=deleted_count)
+
+
+@router.get("/transactions/export", response_class=PlainTextResponse)
+def export_transactions(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    category: str | None = None,
+    merchant_id: str | None = None,
+    amount_min: Decimal | None = None,
+    amount_max: Decimal | None = None,
+    import_id: str | None = None,
+    import_source: str | None = None,
+    categorized: bool | None = None,
+    uncategorized_only: bool = False,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> PlainTextResponse:
+    rows = list_transactions(
+        start_date=start_date,
+        end_date=end_date,
+        category=category,
+        merchant_id=merchant_id,
+        amount_min=amount_min,
+        amount_max=amount_max,
+        import_id=import_id,
+        import_source=import_source,
+        categorized=categorized,
+        uncategorized_only=uncategorized_only,
+        user=user,
+        session=session,
+    )
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["posted_on", "description", "merchant_name", "amount", "category", "import_source"])
+    for row in rows:
+        writer.writerow([row.posted_on.isoformat(), row.description, row.merchant_name, row.amount, row.category, row.import_source])
+
+    return PlainTextResponse(
+        output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=transactions.csv"},
+    )
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionResponse)
@@ -206,8 +388,32 @@ def get_transaction(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ) -> TransactionResponse:
-    item = _user_scoped_resource(session, Transaction, transaction_id, user.id)
-    return TransactionResponse.model_validate(item, from_attributes=True)
+    item = session.scalar(select(Transaction).where(Transaction.id == transaction_id, Transaction.user_id == user.id))
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+
+    merchant_name = None
+    import_source = None
+    if item.merchant_id is not None:
+        merchant_name = session.scalar(select(Merchant.display_name).where(Merchant.id == item.merchant_id))
+    if item.import_id is not None:
+        import_source = session.scalar(select(Import.source_filename).where(Import.id == item.import_id))
+    return TransactionResponse(
+        id=item.id,
+        user_id=item.user_id,
+        import_id=item.import_id,
+        merchant_id=item.merchant_id,
+        posted_on=item.posted_on,
+        description=item.description,
+        normalized_description=item.normalized_description,
+        amount=item.amount,
+        currency=item.currency,
+        category=item.category,
+        notes=item.notes,
+        dedupe_hash=item.dedupe_hash,
+        merchant_name=merchant_name,
+        import_source=import_source,
+    )
 
 
 @router.get("/imports", response_model=list[ImportResponse])

@@ -10,6 +10,7 @@
 - Import preview uploads are staged under `IMPORT_STORAGE_DIR/<user-id>/...` and persisted as pending `imports` rows with `stored_path` set for later commit flows.
 - Import dedupe is keyed from `user_id`, `posted_on`, normalized `amount`, and normalized merchant text; commit flows should reuse that same hash logic instead of inventing per-endpoint duplicate checks.
 - Merchant registry endpoints are instance-scoped, but bulk recategorization logic must only mutate the authenticated user’s transactions when replaying merchant rules.
+- Transaction review and CSV export should share one filter contract so the exported dataset matches the current filtered ledger view exactly.
 
 ## Progress Log
 ## 2026-03-15 15:11 EDT - US-001
@@ -204,5 +205,21 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Local browser verification can conflict with any existing backend already bound to `127.0.0.1:8000`; when that happens, build the frontend and point a temporary FastAPI instance at another port for same-origin verification.
   - The file chooser is exposed as a button in `playwright-cli`, so browser upload verification requires clicking the chooser first and then issuing an `upload` command.
   - Useful context (e.g., "the evaluation panel is in component X")
-  - The current SPA only exposes the Import Wizard view, but the authenticated shell and nav card structure are now in place for later Transaction, Merchant, Subscription, Budget, Dashboard, and Reports pages.
+- The current SPA only exposes the Import Wizard view, but the authenticated shell and nav card structure are now in place for later Transaction, Merchant, Subscription, Budget, Dashboard, and Reports pages.
+---
+## 2026-03-15 17:40 EDT - US-012
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Extended `/api/transactions` with date, category, merchant, amount, import, and categorization filters, plus inline merchant/import metadata for review-oriented UIs.
+- Added inline single-transaction category updates, bulk category assignment, bulk delete actions, and `/api/transactions/export` so filtered ledger views can be exported as CSV without recomputing query logic elsewhere.
+- Added transaction API coverage for filtered queries, uncategorized-only review, inline edits, bulk actions, and CSV export behavior.
+- Files changed: `AGENTS.md`, `backend/app/api/ledger.py`, `backend/tests/test_import_preview_api.py`, `backend/tests/test_transaction_api.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - The transaction list and export endpoints now share the same filter contract, which is the expected foundation for Transaction Manager UI filters and export buttons.
+  - Transaction responses already include merchant display name and import source filename, so the frontend does not need a separate lookup just to render review tables.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Static transaction routes like `/api/transactions/export` must be registered before `/api/transactions/{transaction_id}` or FastAPI will route them as transaction IDs.
+  - Transaction list ordering is newest-first, so tests and UI assumptions should not depend on import insertion order.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The transaction backend regression coverage lives in `backend/tests/test_transaction_api.py` and is the first place to extend when adding more filter dimensions or bulk review actions.
 ---
