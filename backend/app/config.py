@@ -10,6 +10,7 @@ class Settings:
     app_host: str
     app_port: int
     database_url: str
+    import_storage_dir: Path
     password_pepper: str
     auth_secret_key: str
     access_token_ttl_minutes: int
@@ -23,6 +24,12 @@ settings = Settings(
     database_url=os.getenv(
         "DATABASE_URL",
         f"sqlite:///{(Path(__file__).resolve().parents[2] / 'data' / 'private-ledger.db')}",
+    ),
+    import_storage_dir=Path(
+        os.getenv(
+            "IMPORT_STORAGE_DIR",
+            str(Path(__file__).resolve().parents[2] / "data" / "imports-temp"),
+        )
     ),
     password_pepper=os.getenv("PASSWORD_PEPPER", "development-only-pepper"),
     auth_secret_key=os.getenv("AUTH_SECRET_KEY", "development-auth-secret"),

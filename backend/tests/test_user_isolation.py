@@ -27,6 +27,7 @@ def isolation_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         app_host="127.0.0.1",
         app_port=8000,
         database_url=database_url,
+        import_storage_dir=tmp_path / "imports-temp",
         password_pepper="test-pepper",
         auth_secret_key="test-auth-secret",
         access_token_ttl_minutes=15,

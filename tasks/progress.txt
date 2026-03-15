@@ -6,6 +6,7 @@
 - Refresh-token rotation and logout revocation are implemented by storing revoked refresh-token JTIs in `refresh_token_blocklist`.
 - Private financial records are filtered through `user_id` after `get_current_user` resolves the access token, while merchant and merchant-alias queries stay instance-scoped.
 - CSV import profile detection lives in `app.importing.parser`; unsupported headers should return a manual-mapping requirement structure rather than failing implicitly.
+- Import preview uploads are staged under `IMPORT_STORAGE_DIR/<user-id>/...` and persisted as pending `imports` rows with `stored_path` set for later commit flows.
 
 ## Progress Log
 ## 2026-03-15 15:11 EDT - US-001
@@ -135,6 +136,22 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - The import workflow now spans backend stories `US-006` to `US-008` and frontend story `US-010`.
   - Gotchas encountered (e.g., "don't forget to update Z when changing W")
   - Adding a new story in the middle of `prd.json` requires shifting later story IDs and priorities, so future references should use the updated numbering.
+- Useful context (e.g., "the evaluation panel is in component X")
+- Merchant Manager remains downstream because it depends on imported and committed transaction data to populate merchant records.
+---
+## 2026-03-15 17:17 EDT - US-007
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Implemented an authenticated `/api/imports/preview` upload endpoint that stores CSV uploads in a sandboxed per-user temp directory, creates a pending `imports` row, and returns parsed preview rows for detected bank profiles.
+- Added manual column-mapping support for unknown CSV headers, including debit or credit mapping, generic date normalization, and structured `422` validation errors for bad mappings.
+- Added reusable API test fixtures plus import preview tests covering detected profiles, manual mapping requirements, successful manual mapping, invalid mapping errors, and staged file persistence.
+- Files changed: `AGENTS.md`, `README.md`, `.env.example`, `backend/app/api/ledger.py`, `backend/app/config.py`, `backend/app/importing/parser.py`, `backend/app/services/imports.py`, `backend/pyproject.toml`, `backend/uv.lock`, `backend/tests/conftest.py`, `backend/tests/test_auth_api.py`, `backend/tests/test_import_preview_api.py`, `backend/tests/test_user_isolation.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Import preview is now the staging point for commit flows: uploads are written under `IMPORT_STORAGE_DIR/<user-id>/...` and tracked on the `imports` table before any transactions are inserted.
+  - Shared API fixtures belong in `backend/tests/conftest.py` once more than one backend API suite needs the same bootstrapped auth client.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Adding a new required setting means every explicit `Settings(...)` test fixture must be updated, not just the default config object.
+  - Unknown CSVs may need split debit and credit mappings, so manual mapping cannot assume a single signed amount column.
   - Useful context (e.g., "the evaluation panel is in component X")
-  - Merchant Manager remains downstream because it depends on imported and committed transaction data to populate merchant records.
+  - The preview endpoint accepts multipart uploads with optional `column_mapping` JSON in form data; invalid mapping payloads return HTTP `422` with a top-level `detail.errors` list.
 ---

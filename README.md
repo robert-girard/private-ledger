@@ -64,6 +64,7 @@ Required environment variables:
 - `APP_HOST`: host binding for local backend runs, defaults to `0.0.0.0`
 - `APP_PORT`: public port exposed by Docker Compose, defaults to `8000`
 - `DATABASE_URL`: SQLite database location, defaults to `sqlite:///data/private-ledger.db`
+- `IMPORT_STORAGE_DIR`: base directory for sandboxed uploaded CSV previews, defaults to `data/imports-temp`
 - `PASSWORD_PEPPER`: server-side secret appended during password hashing; set a long random value outside development
 - `AUTH_SECRET_KEY`: HMAC secret used for access and refresh token signing
 - `ACCESS_TOKEN_TTL_MINUTES`: access token lifetime in minutes, defaults to `15`
@@ -83,6 +84,7 @@ container build performs the frontend compilation step automatically.
 - Backend-served SPA verification: after frontend changes, rebuild assets with `npm --prefix frontend run build` so FastAPI serves the latest `frontend/dist` output.
 - Full-stack container verification: use `docker compose up --build` to rebuild the SPA and package it into the FastAPI container.
 - Environment setup: `docker compose` reads `.env` directly, so keep `.env.example` and the local `.env` in sync when new required variables are introduced.
+- Import preview uploads: `/api/imports/preview` stores the raw CSV under `IMPORT_STORAGE_DIR/<user-id>/...` and records that temp path on the `imports` row for later commit flows.
 
 ## Notes
 
