@@ -38,6 +38,15 @@ from app.services.merchants import (
     merge_merchants,
     recategorize_transactions_for_merchant,
 )
+from app.services.reports import (
+    get_budget_vs_actual,
+    get_category_breakdown,
+    get_income_expense_summary,
+    get_money_flow,
+    get_monthly_trend,
+    get_top_merchants,
+    report_rows_as_dicts,
+)
 from app.services.subscriptions import (
     SubscriptionInput,
     create_subscription,
@@ -311,6 +320,50 @@ class DashboardAttentionResponse(BaseModel):
     unreviewed_merchant_count: int
 
 
+class ReportMoneyFlowResponse(BaseModel):
+    direction: str
+    category: str
+    amount: Decimal
+
+
+class ReportCategoryBreakdownResponse(BaseModel):
+    category: str
+    amount: Decimal
+    transaction_count: int
+    share: Decimal
+
+
+class ReportMonthlyTrendResponse(BaseModel):
+    month_start: date
+    income_total: Decimal
+    expense_total: Decimal
+    net_total: Decimal
+
+
+class ReportBudgetVsActualResponse(BaseModel):
+    month_start: date
+    category: str
+    planned_amount: Decimal
+    actual_amount: Decimal
+    variance_amount: Decimal
+
+
+class ReportTopMerchantResponse(BaseModel):
+    merchant_id: str | None
+    merchant_name: str
+    category: str | None
+    amount: Decimal
+    transaction_count: int
+
+
+class ReportSummaryResponse(BaseModel):
+    start_date: date | None
+    end_date: date | None
+    income_total: Decimal
+    expense_total: Decimal
+    net_total: Decimal
+
+
 def _transaction_query_for_user(user_id: str):
     return (
         select(Transaction, Merchant.display_name, Import.source_filename)
@@ -357,6 +410,28 @@ def _user_scoped_resource(
     if resource is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
     return resource
+
+
+def _write_report_csv(rows: list[dict[str, object]]) -> str:
+    output = StringIO()
+    if not rows:
+        return ""
+
+    headers = list(rows[0].keys())
+    writer = csv.DictWriter(output, fieldnames=headers)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return output.getvalue()
+
+
+def _report_date_range(
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[date | None, date | None]:
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="start_date must be on or before end_date.")
+    return start_date, end_date
 
 
 @router.get("/me", response_model=CurrentUserResponse)
@@ -921,6 +996,152 @@ def dashboard_attention(
             for item in attention.recent_transactions
         ],
         unreviewed_merchant_count=attention.unreviewed_merchant_count,
+    )
+
+
+@router.get("/reports/money-flow", response_model=list[ReportMoneyFlowResponse])
+def report_money_flow(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> list[ReportMoneyFlowResponse]:
+    resolved_start, resolved_end = _report_date_range(start_date, end_date)
+    return [
+        ReportMoneyFlowResponse(direction=row.direction, category=row.category, amount=row.amount)
+        for row in get_money_flow(session, user=user, start_date=resolved_start, end_date=resolved_end)
+    ]
+
+
+@router.get("/reports/category-breakdown", response_model=list[ReportCategoryBreakdownResponse])
+def report_category_breakdown(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> list[ReportCategoryBreakdownResponse]:
+    resolved_start, resolved_end = _report_date_range(start_date, end_date)
+    return [
+        ReportCategoryBreakdownResponse(
+            category=row.category,
+            amount=row.amount,
+            transaction_count=row.transaction_count,
+            share=row.share,
+        )
+        for row in get_category_breakdown(session, user=user, start_date=resolved_start, end_date=resolved_end)
+    ]
+
+
+@router.get("/reports/monthly-trend", response_model=list[ReportMonthlyTrendResponse])
+def report_monthly_trend(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> list[ReportMonthlyTrendResponse]:
+    resolved_start, resolved_end = _report_date_range(start_date, end_date)
+    return [
+        ReportMonthlyTrendResponse(
+            month_start=row.month_start,
+            income_total=row.income_total,
+            expense_total=row.expense_total,
+            net_total=row.net_total,
+        )
+        for row in get_monthly_trend(session, user=user, start_date=resolved_start, end_date=resolved_end)
+    ]
+
+
+@router.get("/reports/budget-vs-actual", response_model=list[ReportBudgetVsActualResponse])
+def report_budget_vs_actual(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> list[ReportBudgetVsActualResponse]:
+    resolved_start, resolved_end = _report_date_range(start_date, end_date)
+    return [
+        ReportBudgetVsActualResponse(
+            month_start=row.month_start,
+            category=row.category,
+            planned_amount=row.planned_amount,
+            actual_amount=row.actual_amount,
+            variance_amount=row.variance_amount,
+        )
+        for row in get_budget_vs_actual(session, user=user, start_date=resolved_start, end_date=resolved_end)
+    ]
+
+
+@router.get("/reports/top-merchants", response_model=list[ReportTopMerchantResponse])
+def report_top_merchants(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> list[ReportTopMerchantResponse]:
+    resolved_start, resolved_end = _report_date_range(start_date, end_date)
+    return [
+        ReportTopMerchantResponse(
+            merchant_id=row.merchant_id,
+            merchant_name=row.merchant_name,
+            category=row.category,
+            amount=row.amount,
+            transaction_count=row.transaction_count,
+        )
+        for row in get_top_merchants(session, user=user, start_date=resolved_start, end_date=resolved_end, limit=limit)
+    ]
+
+
+@router.get("/reports/summary", response_model=ReportSummaryResponse)
+def report_summary(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> ReportSummaryResponse:
+    resolved_start, resolved_end = _report_date_range(start_date, end_date)
+    summary = get_income_expense_summary(session, user=user, start_date=resolved_start, end_date=resolved_end)
+    return ReportSummaryResponse(
+        start_date=summary.start_date,
+        end_date=summary.end_date,
+        income_total=summary.income_total,
+        expense_total=summary.expense_total,
+        net_total=summary.net_total,
+    )
+
+
+@router.get("/reports/{report_name}/export", response_class=PlainTextResponse)
+def export_report(
+    report_name: Literal[
+        "money-flow",
+        "category-breakdown",
+        "monthly-trend",
+        "budget-vs-actual",
+        "top-merchants",
+    ],
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+) -> PlainTextResponse:
+    resolved_start, resolved_end = _report_date_range(start_date, end_date)
+    if report_name == "money-flow":
+        rows = report_rows_as_dicts(get_money_flow(session, user=user, start_date=resolved_start, end_date=resolved_end))
+    elif report_name == "category-breakdown":
+        rows = report_rows_as_dicts(get_category_breakdown(session, user=user, start_date=resolved_start, end_date=resolved_end))
+    elif report_name == "monthly-trend":
+        rows = report_rows_as_dicts(get_monthly_trend(session, user=user, start_date=resolved_start, end_date=resolved_end))
+    elif report_name == "budget-vs-actual":
+        rows = report_rows_as_dicts(get_budget_vs_actual(session, user=user, start_date=resolved_start, end_date=resolved_end))
+    else:
+        rows = report_rows_as_dicts(get_top_merchants(session, user=user, start_date=resolved_start, end_date=resolved_end, limit=limit))
+
+    csv_text = _write_report_csv(rows)
+    return PlainTextResponse(
+        csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={report_name}.csv"},
     )
 
 

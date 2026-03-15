@@ -4,6 +4,7 @@
 - Authenticated frontend CSV exports should fetch the file with the bearer token and trigger a client-side download, because plain anchor links will miss the API auth header.
 - The SPA still uses one authenticated shell with local `view` state instead of routing, so new pages and quick actions should switch that shared view state rather than introduce parallel navigation patterns.
 - Python dependencies and backend tooling are managed with `uv` from `backend/pyproject.toml` and `backend/uv.lock`.
+- Reporting endpoints should keep one shared `start_date`/`end_date` filter contract across JSON and CSV exports so report downloads stay aligned with the on-screen dataset.
 - Database schema changes should be added as ordered SQL files under `backend/migrations`; backend startup applies them automatically.
 - Initial admin bootstrap runs through `app.bootstrap_admin`, and auth-related work depends on a configured `PASSWORD_PEPPER`.
 - Refresh-token rotation and logout revocation are implemented by storing revoked refresh-token JTIs in `refresh_token_blocklist`.
@@ -358,4 +359,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - Dashboard projections and alerts can legitimately differ from the backend fixture test values when seeded verification data changes, so browser checks should validate the presence and coherence of widgets rather than one hardcoded number.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The Dashboard page now lives in `frontend/src/App.tsx` beside the other tool pages and defaults to the first signed-in view in the current shell.
+---
+## 2026-03-15 19:29 EDT - US-020
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added reporting endpoints for money flow, category breakdown, monthly trend, budget-vs-actual, top merchants, and income-vs-expenses summary, plus CSV exports for the report datasets.
+- Implemented shared reporting aggregation in `app.services.reports`, including date-range filtering, transfer exclusion, budget-vs-actual month/category comparisons, and CSV export reuse through the same dataset builders used by the JSON responses.
+- Added backend tests covering date-range validation, category aggregation, monthly trend totals, budget-vs-actual math, top-merchant ranking, transfer exclusion, and report CSV export output.
+- Files changed: `AGENTS.md`, `backend/app/api/ledger.py`, `backend/app/services/reports.py`, `backend/tests/test_reporting_api.py`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - Reporting aggregation now belongs in `app.services.reports`, which should stay the single source of truth for both JSON report endpoints and CSV exports.
+  - Report datasets are easiest to keep aligned by exporting the same dataclass-backed rows used for the JSON handlers instead of rebuilding CSV-specific queries.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Top-merchant ranking should aggregate by merchant identity, not by `(merchant, category)`, or uncategorized rows from the same merchant will split that merchant into multiple report entries.
+  - Budget-vs-actual reporting needs to recompute actual spend from transactions for the requested months rather than trusting possibly stale persisted `spent_amount` snapshots.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - The current export surface is `GET /api/reports/{report_name}/export` for `money-flow`, `category-breakdown`, `monthly-trend`, `budget-vs-actual`, and `top-merchants`.
 ---
