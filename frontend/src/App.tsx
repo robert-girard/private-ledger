@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
-type AppView = "import" | "transactions" | "merchants" | "subscriptions";
+type AppView = "import" | "transactions" | "merchants" | "subscriptions" | "budget";
 
 type UserSummary = {
   email: string;
@@ -85,6 +85,19 @@ type SubscriptionDetail = SubscriptionRow & {
   }>;
 };
 
+type BudgetRecommendation = {
+  id: string;
+  user_id: string;
+  month_start: string;
+  category: string;
+  planned_amount: string;
+  spent_amount: string;
+  is_active: boolean;
+  source_type: "subscription" | "variable";
+  subscription_names: string[];
+  months_used: number;
+};
+
 type ApiError = {
   detail?: string | { message?: string; errors?: string[] };
 };
@@ -109,6 +122,11 @@ const views: Array<{ id: AppView; title: string; summary: string }> = [
     id: "subscriptions",
     title: "Subscriptions",
     summary: "Detect recurring charges, edit recurring entries, and inspect matched transactions.",
+  },
+  {
+    id: "budget",
+    title: "Budget Creator",
+    summary: "Generate a monthly budget, refine category limits, and activate the reviewed month.",
   },
 ];
 
@@ -1456,6 +1474,258 @@ function SubscriptionsPage({ token }: { token: string }) {
   );
 }
 
+function BudgetCreator({ token }: { token: string }) {
+  const [monthStart, setMonthStart] = useState("2026-04-01");
+  const [step, setStep] = useState(1);
+  const [recommendations, setRecommendations] = useState<BudgetRecommendation[]>([]);
+  const [draftAmounts, setDraftAmounts] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [activating, setActivating] = useState(false);
+
+  const fixedRecommendations = recommendations.filter((item) => item.source_type === "subscription");
+  const variableRecommendations = recommendations.filter((item) => item.source_type === "variable");
+  const totalPlanned = recommendations.reduce((sum, item) => sum + Number(draftAmounts[item.id] ?? item.planned_amount), 0);
+
+  async function generateBudget() {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await apiRequest<{ month_start: string; recommendations: BudgetRecommendation[] }>(
+        "/api/budgets/generate",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ month_start: monthStart }),
+        },
+        token,
+      );
+      setRecommendations(response.recommendations);
+      setDraftAmounts(
+        Object.fromEntries(response.recommendations.map((item) => [item.id, item.planned_amount])),
+      );
+      setStep(1);
+      setMessage(`Generated ${response.recommendations.length} budget recommendations for ${response.month_start}.`);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveBudgetAmount(budgetId: string) {
+    try {
+      const updated = await apiRequest<BudgetRecommendation>(
+        `/api/budgets/${budgetId}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planned_amount: draftAmounts[budgetId] }),
+        },
+        token,
+      );
+      setRecommendations((current) =>
+        current.map((item) =>
+          item.id === budgetId ? { ...item, planned_amount: updated.planned_amount } : item,
+        ),
+      );
+      setMessage(`Updated ${updated.category}.`);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    }
+  }
+
+  async function activateBudget() {
+    setActivating(true);
+    setError("");
+    try {
+      const response = await apiRequest<{ activated_count: number }>(
+        "/api/budgets/activate",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ month_start: monthStart }),
+        },
+        token,
+      );
+      setRecommendations((current) => current.map((item) => ({ ...item, is_active: true })));
+      setMessage(`Activated ${response.activated_count} budget row${response.activated_count === 1 ? "" : "s"} for ${monthStart}.`);
+    } catch (requestError) {
+      setError(errorMessage((requestError as Error).message));
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  function stepCopy() {
+    if (step === 1) {
+      return {
+        title: "Step 1: Fixed spending",
+        description: "Review the subscription-backed entries first so fixed recurring obligations are locked before variable categories move.",
+      };
+    }
+    if (step === 2) {
+      return {
+        title: "Step 2: Variable limits",
+        description: "Adjust the history-based category averages, especially where limited history produced a rougher fallback.",
+      };
+    }
+    return {
+      title: "Step 3: Activation summary",
+      description: "Confirm the month, planned total, and reviewed categories before making this budget the active plan.",
+    };
+  }
+
+  const activeStepCopy = stepCopy();
+
+  return (
+    <section className="workspace-card">
+      <div className="section-heading">
+        <p className="eyebrow">Budget</p>
+        <h2>Budget Creator</h2>
+        <p>Generate a monthly baseline from subscriptions and historical spending, edit the stored recommendations, and activate the month when the review is complete.</p>
+      </div>
+
+      <div className="filter-grid budget-toolbar">
+        <label className="field">
+          <span>Budget month</span>
+          <input type="date" value={monthStart} onChange={(event) => setMonthStart(event.target.value)} />
+        </label>
+        <button className="primary-button" type="button" onClick={() => void generateBudget()} disabled={loading}>
+          {loading ? "Generating..." : "Generate budget"}
+        </button>
+      </div>
+
+      {message ? <p className="notice success">{message}</p> : null}
+      {error ? <p className="notice error">{error}</p> : null}
+
+      <div className="stepper-row">
+        {[1, 2, 3].map((stepNumber) => (
+          <button
+            key={stepNumber}
+            type="button"
+            className={step === stepNumber ? "step-pill active" : "step-pill"}
+            onClick={() => setStep(stepNumber)}
+            disabled={!recommendations.length}
+          >
+            Step {stepNumber}
+          </button>
+        ))}
+      </div>
+
+      <div className="split-layout">
+        <article className="preview-table-card">
+          <div className="table-header">
+            <div>
+              <h3>{activeStepCopy.title}</h3>
+              <p className="muted-copy">{activeStepCopy.description}</p>
+            </div>
+            <span>{recommendations.length} rows</span>
+          </div>
+
+          {step === 1 ? (
+            <div className="budget-review-list">
+              {fixedRecommendations.map((item) => (
+                <div key={item.id} className="budget-row-card">
+                  <div>
+                    <strong>{item.category}</strong>
+                    <p className="muted-copy">{item.subscription_names.join(", ") || "No subscriptions linked"}</p>
+                  </div>
+                  <div className="inline-edit">
+                    <input
+                      value={draftAmounts[item.id] ?? item.planned_amount}
+                      onChange={(event) =>
+                        setDraftAmounts((current) => ({ ...current, [item.id]: event.target.value }))
+                      }
+                    />
+                    <button className="ghost-button" type="button" onClick={() => void saveBudgetAmount(item.id)}>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!fixedRecommendations.length ? <div className="empty-state"><p>No fixed subscription entries were generated.</p></div> : null}
+            </div>
+          ) : null}
+
+          {step === 2 ? (
+            <div className="budget-review-list">
+              {variableRecommendations.map((item) => (
+                <div key={item.id} className="budget-row-card">
+                  <div>
+                    <strong>{item.category}</strong>
+                    <p className="muted-copy">Average from {item.months_used} month{item.months_used === 1 ? "" : "s"} of history</p>
+                  </div>
+                  <div className="inline-edit">
+                    <input
+                      value={draftAmounts[item.id] ?? item.planned_amount}
+                      onChange={(event) =>
+                        setDraftAmounts((current) => ({ ...current, [item.id]: event.target.value }))
+                      }
+                    />
+                    <button className="ghost-button" type="button" onClick={() => void saveBudgetAmount(item.id)}>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {!variableRecommendations.length ? <div className="empty-state"><p>No variable category limits were generated.</p></div> : null}
+            </div>
+          ) : null}
+
+          {step === 3 ? (
+            <div className="budget-review-list">
+              {recommendations.map((item) => (
+                <div key={item.id} className="budget-row-card">
+                  <div>
+                    <strong>{item.category}</strong>
+                    <p className="muted-copy">{item.source_type === "subscription" ? "Fixed" : "Variable"} entry</p>
+                  </div>
+                  <span>{draftAmounts[item.id] ?? item.planned_amount}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </article>
+
+        <aside className="preview-metadata detail-panel">
+          <h3>Activation summary</h3>
+          <dl>
+            <div>
+              <dt>Month</dt>
+              <dd>{monthStart}</dd>
+            </div>
+            <div>
+              <dt>Fixed rows</dt>
+              <dd>{fixedRecommendations.length}</dd>
+            </div>
+            <div>
+              <dt>Variable rows</dt>
+              <dd>{variableRecommendations.length}</dd>
+            </div>
+            <div>
+              <dt>Planned total</dt>
+              <dd>{totalPlanned.toFixed(2)}</dd>
+            </div>
+          </dl>
+          <div className="actions-row">
+            <button className="ghost-button" type="button" onClick={() => setStep((current) => Math.max(1, current - 1))}>
+              Previous
+            </button>
+            <button className="secondary-button" type="button" onClick={() => setStep((current) => Math.min(3, current + 1))}>
+              Next
+            </button>
+          </div>
+          <button className="primary-button" type="button" onClick={() => void activateBudget()} disabled={!recommendations.length || activating}>
+            {activating ? "Activating..." : "Activate month budget"}
+          </button>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [token, setToken] = useState<string>(() => window.localStorage.getItem("private-ledger-token") ?? "");
   const [user, setUser] = useState<UserSummary | null>(null);
@@ -1578,6 +1848,7 @@ export function App() {
             {view === "transactions" ? <TransactionManager token={token} /> : null}
             {view === "merchants" ? <MerchantManager token={token} /> : null}
             {view === "subscriptions" ? <SubscriptionsPage token={token} /> : null}
+            {view === "budget" ? <BudgetCreator token={token} /> : null}
           </div>
         </div>
       )}

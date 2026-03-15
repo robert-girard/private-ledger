@@ -15,6 +15,7 @@
 - Recurring subscription detection groups negative transactions by merchant or normalized description in `app.services.subscriptions`; `/api/subscriptions/detect` upserts the detected rows so reruns stay idempotent.
 - Subscription UI can use the existing list/detail/detect endpoints directly; detection is an explicit page action and detail views already include recent matching charges.
 - Budget generation should create or replace inactive `budgets` rows for a target month first, then activate that month in a separate step so review UIs can edit persisted recommendations before they become the live budget.
+- Budget Creator uses the persisted generate/edit/activate flow directly; the frontend can treat the budget rows themselves as the editable draft instead of inventing a separate client-only recommendation model.
 - Transaction review and CSV export should share one filter contract so the exported dataset matches the current filtered ledger view exactly.
 
 ## Progress Log
@@ -307,4 +308,20 @@ Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
   - `spent_amount` needs a refresh pass after generation because the recommendation rows are stored separately from the transaction history they summarize.
   - Useful context (e.g., "the evaluation panel is in component X")
   - The new backend contract for later UI work is `POST /api/budgets/generate`, `PATCH /api/budgets/{id}`, and `POST /api/budgets/activate`.
+---
+## 2026-03-15 19:05 EDT - US-017
+Thread: unavailable (`AMP_CURRENT_THREAD_ID` was not set in this environment)
+- Added a Budget Creator page to the authenticated SPA shell with a three-step flow for fixed subscription review, variable category review, and final activation summary.
+- Wired the page directly to the new budget generation endpoints so individual budget rows can be edited in place before the selected month is activated.
+- Verified the page in the browser using `playwright-cli` against a temporary local backend on `http://127.0.0.1:8010`: signed in, opened Budget Creator, generated April 2026 recommendations from seeded subscriptions and transaction history, moved to the variable step, edited `Groceries` from `110.00` to `125.00`, advanced to the summary step, and activated the month budget. Screenshot: `/tmp/private-ledger-us017-budget-creator.png`.
+- Files changed: `AGENTS.md`, `frontend/src/App.tsx`, `frontend/src/styles.css`, `tasks/prd.json`, `tasks/progress.txt`
+- **Learnings for future iterations:**
+  - Patterns discovered (e.g., "this codebase uses X for Y")
+  - The Budget Creator can remain on the shared shell by treating generated `budgets` rows as the editable draft state instead of keeping a separate unsaved recommendation model.
+  - The three-step review flow maps cleanly onto the existing backend contract: fixed rows first, variable rows second, activation summary last.
+  - Gotchas encountered (e.g., "don't forget to update Z when changing W")
+  - Browser verification needs realistic seeded subscriptions plus trailing transaction history, otherwise the step flow renders but does not prove any real budget-generation behavior.
+  - The generated row count currently reflects all recommendations even on step-specific views, so any later UX polish should decide whether that indicator should stay global or become step-local.
+  - Useful context (e.g., "the evaluation panel is in component X")
+  - Budget Creator now lives beside the other tool pages in `frontend/src/App.tsx`, and later dashboard work can reuse its budget summary numbers without needing new client-side aggregation first.
 ---
